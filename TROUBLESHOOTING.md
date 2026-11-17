@@ -165,4 +165,4 @@ git clone <project_repo> or copy fresh files
 3. **Contact Support**
 - Check project documentation
 - Review issue tracker
-- Consult with team members 
+- Consult with team members
