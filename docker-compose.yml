@@ -36,6 +36,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    env_file:
+      - ./airflow/.env
     environment:
       - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://airflow:airflow@postgres/airflow
       - AIRFLOW__CORE__EXECUTOR=LocalExecutor
@@ -46,9 +48,10 @@ services:
       - ./airflow/logs:/opt/airflow/logs
       - ./airflow/plugins:/opt/airflow/plugins
       - ./dbt:/opt/airflow/dbt
+      - ./great_expectations:/opt/airflow/great_expectations
       - /var/run/docker.sock:/var/run/docker.sock
     ports:
-      - "8080:8080"
+      - "8085:8080"
     command: bash -c "airflow db init && airflow users create --username admin --firstname Admin --lastname User --role Admin --email admin@example.com --password admin && airflow webserver"
     networks:
       - dbt_airflow_network
@@ -59,6 +62,8 @@ services:
       dockerfile: Dockerfile
     depends_on:
       - airflow-webserver
+    env_file:
+      - ./airflow/.env
     environment:
       - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://airflow:airflow@postgres/airflow
       - AIRFLOW__CORE__EXECUTOR=LocalExecutor
@@ -69,6 +74,7 @@ services:
       - ./airflow/logs:/opt/airflow/logs
       - ./airflow/plugins:/opt/airflow/plugins
       - ./dbt:/opt/airflow/dbt
+      - ./great_expectations:/opt/airflow/great_expectations
       - /var/run/docker.sock:/var/run/docker.sock
     command: airflow scheduler
     networks:
@@ -80,8 +86,11 @@ services:
       dockerfile: Dockerfile
     depends_on:
       - sqlserver
+    environment:
+      - GX_HOME=/usr/app/great_expectations
     volumes:
       - ./dbt:/usr/app/dbt
+      - ./great_expectations:/usr/app/great_expectations
     ports:
       - "8001:8001"
     command: tail -f /dev/null  # Keep container running
