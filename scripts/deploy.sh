@@ -36,16 +36,7 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
-# 2. Run tests on current state
-echo -e "${YELLOW}🧪 Running tests...${NC}"
-dbt test --target $TARGET --profiles-dir .
-
-if [ $? -ne 0 ]; then
-    echo -e "${RED}❌ Tests failed${NC}"
-    exit 1
-fi
-
-# 3. Backup current state
+# 2. Backup current state
 echo -e "${YELLOW}💾 Creating backup...${NC}"
 timestamp=$(date +%Y%m%d_%H%M%S)
 backup_dir="../backups/${ENVIRONMENT}_${timestamp}"
@@ -54,7 +45,7 @@ cp -r target/ $backup_dir/
 
 echo "Backup created at: $backup_dir"
 
-# 4. Deploy models
+# 3. Deploy models
 echo -e "${YELLOW}🔨 Deploying models...${NC}"
 dbt run --target $TARGET --profiles-dir .
 
@@ -63,7 +54,7 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
-# 5. Run post-deployment tests
+# 4. Run post-deployment tests
 echo -e "${YELLOW}✅ Running post-deployment tests...${NC}"
 dbt test --target $TARGET --profiles-dir .
 
@@ -72,7 +63,7 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
-# 6. Generate documentation
+# 5. Generate documentation
 echo -e "${YELLOW}📚 Generating documentation...${NC}"
 dbt docs generate --target $TARGET --profiles-dir .
 
