@@ -31,9 +31,46 @@ models:
       - name: line_total
         description: Total amount for the line item
 
+  - name: brnz_customers
+    description: "Bronze layer customer data from AdventureWorks"
+    columns:
+      - name: CustomerID
+        description: "Primary key for customer"
+        tests:
+          - unique
+          - not_null
+
+      - name: FirstName
+        description: "Customer first name"
+
+      - name: LastName
+        description: "Customer last name"
+
+      - name: EmailPromotion
+        description: "Email promotion preference"
+
+      - name: StoreID
+        description: "Store identifier"
+
+      - name: TerritoryID
+        description: "Sales territory"
+
+      - name: last_modified_date
+        description: "Last modified timestamp"
+        tests:
+          - not_null
+
   - name: brnz_sales_orders
     description: Staging model combining sales order headers and details
     columns:
+      - name: line_total
+        tests:
+          - positive_values
+
+      - name: order_date
+        tests:
+          - no_future_dates
+
       - name: sales_order_id
         description: Primary key for sales orders
         tests:
@@ -44,6 +81,8 @@ models:
           - not_null
       - name: order_date
         description: Date when the order was placed
+        tests:
+          - not_null
       - name: due_date
         description: Date when the order is due
       - name: ship_date
@@ -58,6 +97,11 @@ models:
         description: Customer purchase order number
       - name: customer_id
         description: Foreign key reference to customer
+        tests:
+          - not_null
+          - relationships:
+              to: ref('brnz_customers')
+              field: CustomerID
       - name: sales_person_id
         description: ID of the sales person
       - name: territory_id
@@ -76,4 +120,4 @@ models:
       - dbt_utils.unique_combination_of_columns:
           combination_of_columns:
             - sales_order_id
-            - order_detail_id 
+            - order_detail_id
