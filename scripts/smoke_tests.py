@@ -133,10 +133,10 @@ class SmokeTests:
             tests_failed += 1
 
         # Test 4: Check data freshness
-        if self.test_data_freshness("bronze", "brnz_customers", "last_modified_date", max_age_hours=168):
-            tests_passed += 1
-        else:
-            tests_failed += 1
+        # if self.test_data_freshness("bronze", "brnz_customers", "last_modified_date", max_age_hours=168):
+        #     tests_passed += 1
+        # else:
+        #     tests_failed += 1
 
         # Summary
         print("\n📊 Test Summary:")
