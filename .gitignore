@@ -4,6 +4,7 @@ __pycache__/
 *$py.class
 *.so
 .Python
+*.env
 env/
 venv/
 ENV/
@@ -14,7 +15,7 @@ dbt/target/
 dbt/dbt_packages/
 dbt/logs/
 dbt/.user.yml
-dbt/profiles.yml
+# dbt/profiles.yml (uncommented to allow CI/CD to read profile configuration)
 
 # Airflow
 airflow/logs/
@@ -42,3 +43,8 @@ Thumbs.db
 # Backups
 backup/
 *.bak
+
+# Great Expectations
+great_expectations/uncommitted/
+.env.*
+!.env.example
