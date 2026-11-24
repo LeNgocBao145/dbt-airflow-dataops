@@ -15,6 +15,9 @@ on:
           - test
           - production
 
+env:
+  DBT_PROFILES_DIR: ./dbt
+
 jobs:
   deploy-test:
     name: Deploy to Test
