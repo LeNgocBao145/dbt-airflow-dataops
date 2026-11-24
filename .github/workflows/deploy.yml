@@ -54,7 +54,7 @@ jobs:
             --password ${{ secrets.TEST_SQL_PASSWORD }}
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: test-deployment
           path: |
@@ -101,6 +101,17 @@ jobs:
 
       - name: Notify team
         if: always()
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          JOB_STATUS: ${{ job.status }}
         run: |
-          echo "Deployment to production completed"
-          # Add Slack notification here
+          echo "Deployment to production completed with status: $JOB_STATUS"
+          if [ -n "$SLACK_WEBHOOK_URL" ]; then
+            COLOR="good"
+            [ "$JOB_STATUS" != "success" ] && COLOR="danger"
+            curl -X POST -H 'Content-type: application/json' \
+              --data "{\"attachments\":[{\"color\":\"$COLOR\",\"title\":\"Production Deployment: $JOB_STATUS\",\"text\":\"Commit: ${{ github.sha }}\nAuthor: ${{ github.actor }}\nWorkflow: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\"}]}" \
+              "$SLACK_WEBHOOK_URL"
+          else
+            echo "SLACK_WEBHOOK_URL secret not set. Skipping Slack notification."
+          fi
