@@ -52,13 +52,8 @@ jobs:
             sleep 2
           done
 
-      - name: Install dependencies and ODBC Driver
+      - name: Install dependencies
         run: |
-          sudo apt-get update && sudo apt-get install -y unixodbc unixodbc-dev curl gnupg
-          curl https://packages.microsoft.com/keys/microsoft.asc | sudo apt-key add -
-          curl https://packages.microsoft.com/config/ubuntu/22.04/prod.list | sudo tee /etc/apt/sources.list.d/mssql-release.list
-          sudo apt-get update
-          sudo ACCEPT_EULA=Y apt-get install -y msodbcsql17 mssql-tools
           pip install dbt-sqlserver pyodbc
 
       - name: Setup Test Database and User
@@ -131,13 +126,8 @@ jobs:
             sleep 2
           done
 
-      - name: Install dependencies and ODBC Driver
+      - name: Install dependencies
         run: |
-          sudo apt-get update && sudo apt-get install -y unixodbc unixodbc-dev curl gnupg
-          curl https://packages.microsoft.com/keys/microsoft.asc | sudo apt-key add -
-          curl https://packages.microsoft.com/config/ubuntu/22.04/prod.list | sudo tee /etc/apt/sources.list.d/mssql-release.list
-          sudo apt-get update
-          sudo ACCEPT_EULA=Y apt-get install -y msodbcsql17 mssql-tools
           pip install dbt-sqlserver pyodbc
 
       - name: Setup Production Database and User
