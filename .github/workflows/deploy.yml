@@ -25,20 +25,6 @@ jobs:
     if: github.ref == 'refs/heads/develop' || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'test')
     environment: test
 
-    services:
-      sqlserver:
-        image: mcr.microsoft.com/mssql/server:2019-latest
-        env:
-          ACCEPT_EULA: 'Y'
-          SA_PASSWORD: 'YourStrong@Passw0rd'
-        ports:
-          - 1433:1433
-        options: >-
-          --health-cmd "/opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P 'YourStrong@Passw0rd' -Q 'SELECT 1'"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 10
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
@@ -47,6 +33,24 @@ jobs:
         uses: actions/setup-python@v4
         with:
           python-version: '3.9'
+
+      - name: Start SQL Server Container
+        run: |
+          docker run -d --name sqlserver_test -p 1433:1433 \
+            -e "ACCEPT_EULA=Y" \
+            -e "SA_PASSWORD=YourStrong@Passw0rd" \
+            mcr.microsoft.com/mssql/server:2019-latest
+
+          # Wait for SQL Server to be healthy
+          echo "Waiting for SQL Server to be ready..."
+          for i in {1..30}; do
+            if docker exec sqlserver_test /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P 'YourStrong@Passw0rd' -Q "SELECT 1" > /dev/null 2>&1; then
+              echo "SQL Server is ready!"
+              break
+            fi
+            echo "Waiting ($i/30)..."
+            sleep 2
+          done
 
       - name: Install dependencies and ODBC Driver
         run: |
@@ -62,12 +66,11 @@ jobs:
           TEST_USER: ${{ secrets.TEST_SQL_USER }}
           TEST_PASSWORD: ${{ secrets.TEST_SQL_PASSWORD }}
         run: |
-          CONTAINER_ID=$(docker ps -q --filter ancestor=mcr.microsoft.com/mssql/server:2019-latest)
           curl -L -o /tmp/AdventureWorks2014.bak https://github.com/Microsoft/sql-server-samples/releases/download/adventureworks/AdventureWorks2014.bak
-          docker cp /tmp/AdventureWorks2014.bak $CONTAINER_ID:/tmp/AdventureWorks2014.bak
-          docker exec $CONTAINER_ID /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P 'YourStrong@Passw0rd' -Q "RESTORE DATABASE AdventureWorks2014 FROM DISK = '/tmp/AdventureWorks2014.bak' WITH MOVE 'AdventureWorks2014_Data' TO '/var/opt/mssql/data/AdventureWorks2014.mdf', MOVE 'AdventureWorks2014_Log' TO '/var/opt/mssql/data/AdventureWorks2014_log.ldf'"
-          docker exec $CONTAINER_ID /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P 'YourStrong@Passw0rd' -Q "RESTORE DATABASE AdventureWorks2014_Test FROM DISK = '/tmp/AdventureWorks2014.bak' WITH MOVE 'AdventureWorks2014_Data' TO '/var/opt/mssql/data/AdventureWorks2014_Test.mdf', MOVE 'AdventureWorks2014_Log' TO '/var/opt/mssql/data/AdventureWorks2014_Test_log.ldf'"
-          docker exec $CONTAINER_ID /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P 'YourStrong@Passw0rd' -Q "IF NOT EXISTS (SELECT * FROM sys.server_principals WHERE name = '$TEST_USER') CREATE LOGIN [$TEST_USER] WITH PASSWORD = '$TEST_PASSWORD'; USE AdventureWorks2014; IF NOT EXISTS (SELECT * FROM sys.database_principals WHERE name = '$TEST_USER') CREATE USER [$TEST_USER] FOR LOGIN [$TEST_USER]; ALTER ROLE db_owner ADD MEMBER [$TEST_USER]; USE AdventureWorks2014_Test; IF NOT EXISTS (SELECT * FROM sys.database_principals WHERE name = '$TEST_USER') CREATE USER [$TEST_USER] FOR LOGIN [$TEST_USER]; ALTER ROLE db_owner ADD MEMBER [$TEST_USER];"
+          docker cp /tmp/AdventureWorks2014.bak sqlserver_test:/tmp/AdventureWorks2014.bak
+          docker exec sqlserver_test /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P 'YourStrong@Passw0rd' -Q "RESTORE DATABASE AdventureWorks2014 FROM DISK = '/tmp/AdventureWorks2014.bak' WITH MOVE 'AdventureWorks2014_Data' TO '/var/opt/mssql/data/AdventureWorks2014.mdf', MOVE 'AdventureWorks2014_Log' TO '/var/opt/mssql/data/AdventureWorks2014_log.ldf'"
+          docker exec sqlserver_test /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P 'YourStrong@Passw0rd' -Q "RESTORE DATABASE AdventureWorks2014_Test FROM DISK = '/tmp/AdventureWorks2014.bak' WITH MOVE 'AdventureWorks2014_Data' TO '/var/opt/mssql/data/AdventureWorks2014_Test.mdf', MOVE 'AdventureWorks2014_Log' TO '/var/opt/mssql/data/AdventureWorks2014_Test_log.ldf'"
+          docker exec sqlserver_test /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P 'YourStrong@Passw0rd' -Q "IF NOT EXISTS (SELECT * FROM sys.server_principals WHERE name = '$TEST_USER') CREATE LOGIN [$TEST_USER] WITH PASSWORD = '$TEST_PASSWORD'; USE AdventureWorks2014; IF NOT EXISTS (SELECT * FROM sys.database_principals WHERE name = '$TEST_USER') CREATE USER [$TEST_USER] FOR LOGIN [$TEST_USER]; ALTER ROLE db_owner ADD MEMBER [$TEST_USER]; USE AdventureWorks2014_Test; IF NOT EXISTS (SELECT * FROM sys.database_principals WHERE name = '$TEST_USER') CREATE USER [$TEST_USER] FOR LOGIN [$TEST_USER]; ALTER ROLE db_owner ADD MEMBER [$TEST_USER];"
 
       - name: Run deployment
         env:
@@ -101,20 +104,6 @@ jobs:
     environment: production
     needs: []
 
-    services:
-      sqlserver:
-        image: mcr.microsoft.com/mssql/server:2019-latest
-        env:
-          ACCEPT_EULA: 'Y'
-          SA_PASSWORD: 'YourStrong@Passw0rd'
-        ports:
-          - 1433:1433
-        options: >-
-          --health-cmd "/opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P 'YourStrong@Passw0rd' -Q 'SELECT 1'"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 10
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
@@ -123,6 +112,24 @@ jobs:
         uses: actions/setup-python@v4
         with:
           python-version: '3.9'
+
+      - name: Start SQL Server Container
+        run: |
+          docker run -d --name sqlserver_prod -p 1433:1433 \
+            -e "ACCEPT_EULA=Y" \
+            -e "SA_PASSWORD=YourStrong@Passw0rd" \
+            mcr.microsoft.com/mssql/server:2019-latest
+
+          # Wait for SQL Server to be healthy
+          echo "Waiting for SQL Server to be ready..."
+          for i in {1..30}; do
+            if docker exec sqlserver_prod /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P 'YourStrong@Passw0rd' -Q "SELECT 1" > /dev/null 2>&1; then
+              echo "SQL Server is ready!"
+              break
+            fi
+            echo "Waiting ($i/30)..."
+            sleep 2
+          done
 
       - name: Install dependencies and ODBC Driver
         run: |
@@ -138,12 +145,11 @@ jobs:
           PROD_USER: ${{ secrets.PROD_SQL_USER }}
           PROD_PASSWORD: ${{ secrets.PROD_SQL_PASSWORD }}
         run: |
-          CONTAINER_ID=$(docker ps -q --filter ancestor=mcr.microsoft.com/mssql/server:2019-latest)
           curl -L -o /tmp/AdventureWorks2014.bak https://github.com/Microsoft/sql-server-samples/releases/download/adventureworks/AdventureWorks2014.bak
-          docker cp /tmp/AdventureWorks2014.bak $CONTAINER_ID:/tmp/AdventureWorks2014.bak
-          docker exec $CONTAINER_ID /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P 'YourStrong@Passw0rd' -Q "RESTORE DATABASE AdventureWorks2014 FROM DISK = '/tmp/AdventureWorks2014.bak' WITH MOVE 'AdventureWorks2014_Data' TO '/var/opt/mssql/data/AdventureWorks2014.mdf', MOVE 'AdventureWorks2014_Log' TO '/var/opt/mssql/data/AdventureWorks2014_log.ldf'"
-          docker exec $CONTAINER_ID /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P 'YourStrong@Passw0rd' -Q "RESTORE DATABASE AdventureWorks2014_Prod FROM DISK = '/tmp/AdventureWorks2014.bak' WITH MOVE 'AdventureWorks2014_Data' TO '/var/opt/mssql/data/AdventureWorks2014_Prod.mdf', MOVE 'AdventureWorks2014_Log' TO '/var/opt/mssql/data/AdventureWorks2014_Prod_log.ldf'"
-          docker exec $CONTAINER_ID /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P 'YourStrong@Passw0rd' -Q "IF NOT EXISTS (SELECT * FROM sys.server_principals WHERE name = '$PROD_USER') CREATE LOGIN [$PROD_USER] WITH PASSWORD = '$PROD_PASSWORD'; USE AdventureWorks2014; IF NOT EXISTS (SELECT * FROM sys.database_principals WHERE name = '$PROD_USER') CREATE USER [$PROD_USER] FOR LOGIN [$PROD_USER]; ALTER ROLE db_owner ADD MEMBER [$PROD_USER]; USE AdventureWorks2014_Prod; IF NOT EXISTS (SELECT * FROM sys.database_principals WHERE name = '$PROD_USER') CREATE USER [$PROD_USER] FOR LOGIN [$PROD_USER]; ALTER ROLE db_owner ADD MEMBER [$PROD_USER];"
+          docker cp /tmp/AdventureWorks2014.bak sqlserver_prod:/tmp/AdventureWorks2014.bak
+          docker exec sqlserver_prod /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P 'YourStrong@Passw0rd' -Q "RESTORE DATABASE AdventureWorks2014 FROM DISK = '/tmp/AdventureWorks2014.bak' WITH MOVE 'AdventureWorks2014_Data' TO '/var/opt/mssql/data/AdventureWorks2014.mdf', MOVE 'AdventureWorks2014_Log' TO '/var/opt/mssql/data/AdventureWorks2014_log.ldf'"
+          docker exec sqlserver_prod /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P 'YourStrong@Passw0rd' -Q "RESTORE DATABASE AdventureWorks2014_Prod FROM DISK = '/tmp/AdventureWorks2014.bak' WITH MOVE 'AdventureWorks2014_Data' TO '/var/opt/mssql/data/AdventureWorks2014_Prod.mdf', MOVE 'AdventureWorks2014_Log' TO '/var/opt/mssql/data/AdventureWorks2014_Prod_log.ldf'"
+          docker exec sqlserver_prod /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P 'YourStrong@Passw0rd' -Q "IF NOT EXISTS (SELECT * FROM sys.server_principals WHERE name = '$PROD_USER') CREATE LOGIN [$PROD_USER] WITH PASSWORD = '$PROD_PASSWORD'; USE AdventureWorks2014; IF NOT EXISTS (SELECT * FROM sys.database_principals WHERE name = '$PROD_USER') CREATE USER [$PROD_USER] FOR LOGIN [$PROD_USER]; ALTER ROLE db_owner ADD MEMBER [$PROD_USER]; USE AdventureWorks2014_Prod; IF NOT EXISTS (SELECT * FROM sys.database_principals WHERE name = '$PROD_USER') CREATE USER [$PROD_USER] FOR LOGIN [$PROD_USER]; ALTER ROLE db_owner ADD MEMBER [$PROD_USER];"
 
       - name: Run deployment
         env:
