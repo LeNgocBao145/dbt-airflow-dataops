@@ -7,6 +7,7 @@ on:
       - 'dbt/**'
       - 'scripts/patch_recce_sqlserver_profile.py'
       - 'scripts/render_recce_pr_comment.py'
+      - 'scripts/generate_recce_config.py'
       - '.github/workflows/recce-diff.yml'
 
 env:
@@ -90,6 +91,10 @@ jobs:
           dbt run --target pr --vars "$DEMO_VARS" --profiles-dir .
           dbt docs generate --target pr --vars "$DEMO_VARS" --profiles-dir .
           test -s target/manifest.json && test -s target/catalog.json
+
+      - name: Generate Recce checks for changed tables
+        run: |
+          python scripts/generate_recce_config.py --base-manifest target-base/manifest.json --current-manifest dbt/target/manifest.json --output dbt/recce.yml
 
       - name: Run dbt tests
         id: dbt_tests
