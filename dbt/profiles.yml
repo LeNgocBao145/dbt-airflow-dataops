@@ -23,7 +23,7 @@ dbt_airflow_project:
 
     ci:
       type: sqlserver
-      driver: 'ODBC Driver 17 for SQL Server'
+      backend: mssql-python
       server: localhost
       port: 1433
       database: AdventureWorks2014_CI
@@ -32,6 +32,7 @@ dbt_airflow_project:
       password: "{{ env_var('DBT_CI_PASSWORD', 'YourStrong@Passw0rd') }}"
       threads: 2
       trust_cert: true
+      encrypt: false
 
     test:
       type: sqlserver
