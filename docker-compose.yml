@@ -29,6 +29,44 @@ services:
     networks:
       - dbt_airflow_network
 
+  # --- Pipeline Monitoring (Prometheus + Grafana + StatsD Exporter) ---
+  statsd-exporter:
+    image: prom/statsd-exporter:v0.22.7
+    command: ["--statsd.mapping-config=/etc/statsd/statsd_mapping.yml"]
+    volumes:
+      - ./monitoring/statsd/statsd_mapping.yml:/etc/statsd/statsd_mapping.yml:ro
+    ports:
+      - "9125:9125/udp"
+      - "9102:9102"
+    networks:
+      - dbt_airflow_network
+
+  prometheus:
+    image: prom/prometheus:v2.45.0
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+    networks:
+      - dbt_airflow_network
+
+  grafana:
+    image: grafana/grafana:10.0.0
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning
+      - grafana_data:/var/lib/grafana
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+    networks:
+      - dbt_airflow_network
+
   airflow-webserver:
     build:
       context: ./airflow
@@ -36,6 +74,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      statsd-exporter:
+        condition: service_started
     env_file:
       - ./airflow/.env
     environment:
@@ -43,6 +83,10 @@ services:
       - AIRFLOW__CORE__EXECUTOR=LocalExecutor
       - AIRFLOW__CORE__LOAD_EXAMPLES=False
       - AIRFLOW__CORE__FERNET_KEY=46BKJoQYlPPOexq0OhDZnIlNepKFf87WFwLbfzqDDho=
+      - AIRFLOW__METRICS__STATSD_ON=True
+      - AIRFLOW__METRICS__STATSD_HOST=statsd-exporter
+      - AIRFLOW__METRICS__STATSD_PORT=9125
+      - AIRFLOW__METRICS__STATSD_PREFIX=airflow
     volumes:
       - ./airflow/dags:/opt/airflow/dags
       - ./airflow/logs:/opt/airflow/logs
@@ -62,6 +106,7 @@ services:
       dockerfile: Dockerfile
     depends_on:
       - airflow-webserver
+      - statsd-exporter
     env_file:
       - ./airflow/.env
     environment:
@@ -69,6 +114,10 @@ services:
       - AIRFLOW__CORE__EXECUTOR=LocalExecutor
       - AIRFLOW__CORE__LOAD_EXAMPLES=False
       - AIRFLOW__CORE__FERNET_KEY=46BKJoQYlPPOexq0OhDZnIlNepKFf87WFwLbfzqDDho=
+      - AIRFLOW__METRICS__STATSD_ON=True
+      - AIRFLOW__METRICS__STATSD_HOST=statsd-exporter
+      - AIRFLOW__METRICS__STATSD_PORT=9125
+      - AIRFLOW__METRICS__STATSD_PREFIX=airflow
     volumes:
       - ./airflow/dags:/opt/airflow/dags
       - ./airflow/logs:/opt/airflow/logs
@@ -100,6 +149,8 @@ services:
 volumes:
   sqlserver_data:
   postgres_data:
+  prometheus_data:
+  grafana_data:
 
 networks:
   dbt_airflow_network:

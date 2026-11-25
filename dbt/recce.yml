@@ -1,0 +1,8 @@
+# CI replaces this with changed-table profile checks generated from Base/Current manifests.
+checks:
+  - name: Row count diff for changed tables
+    description: Compare row counts for changed table models and downstream tables.
+    type: row_count_diff
+    params:
+      select: state:modified+,config.materialized:table
+      view_mode: changed_models

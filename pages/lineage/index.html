@@ -1,0 +1,1707 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive Column-Level Lineage</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.28.1/cytoscape.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dagre@0.8.5/dist/dagre.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/cytoscape-dagre@2.5.0/cytoscape-dagre.min.js"></script>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            background: #f8fafc;
+        }
+        header {
+            background: #1e293b;
+            color: white;
+            padding: 12px 24px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        header h1 {
+            margin: 0;
+            font-size: 1.15rem;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .controls {
+            display: flex;
+            gap: 10px;
+        }
+        button {
+            background: #3b82f6;
+            color: white;
+            border: none;
+            padding: 6px 14px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 500;
+            transition: background 0.2s;
+        }
+        button:hover { background: #2563eb; }
+        #cy {
+            flex: 1;
+            width: 100%;
+            height: 100%;
+        }
+        .legend {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            background: white;
+            padding: 12px 18px;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);
+            font-size: 0.85rem;
+            z-index: 10;
+            line-height: 1.6;
+        }
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 3px;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>🔍 Interactive Column-Level Lineage <span>(DataOps Project)</span></h1>
+        <div class="controls">
+            <button onclick="cy.fit(null, 40)">Fit View</button>
+            <button onclick="resetHighlight()">Reset Highlight</button>
+            <a href="../dbt-docs/" style="color: #93c5fd; text-decoration: none; align-self: center; font-size: 0.9rem; margin-left: 10px;">➔ Go to DBT Docs</a>
+        </div>
+    </header>
+
+    <div id="cy"></div>
+
+    <div class="legend">
+        <strong>Pipeline Layers:</strong>
+        <div class="legend-item"><span class="dot" style="background: #cd7f32;"></span> Bronze (Raw Ingestion)</div>
+        <div class="legend-item"><span class="dot" style="background: #94a3b8;"></span> Silver (Cleaned / Joined)</div>
+        <div class="legend-item"><span class="dot" style="background: #eab308;"></span> Gold (Marts / Metrics)</div>
+        <div style="margin-top: 6px; font-size: 0.75rem; color: #64748b;">Click node to highlight upstream/downstream</div>
+    </div>
+
+    <script>
+        const elements = [
+  {
+    "data": {
+      "id": "table_brnz_customers",
+      "label": "brnz_customers (bronze)",
+      "type": "table",
+      "layer": "bronze"
+    }
+  },
+  {
+    "data": {
+      "id": "col_brnz_customers_FirstName",
+      "label": "FirstName",
+      "parent": "table_brnz_customers",
+      "type": "column",
+      "layer": "bronze"
+    }
+  },
+  {
+    "data": {
+      "id": "col_brnz_customers_Person",
+      "label": "Person",
+      "parent": "table_brnz_customers",
+      "type": "column",
+      "layer": "bronze"
+    }
+  },
+  {
+    "data": {
+      "id": "col_brnz_customers_StoreID",
+      "label": "StoreID",
+      "parent": "table_brnz_customers",
+      "type": "column",
+      "layer": "bronze"
+    }
+  },
+  {
+    "data": {
+      "id": "col_brnz_customers_last_modified_date",
+      "label": "last_modified_date",
+      "parent": "table_brnz_customers",
+      "type": "column",
+      "layer": "bronze"
+    }
+  },
+  {
+    "data": {
+      "id": "col_brnz_customers_TerritoryID",
+      "label": "TerritoryID",
+      "parent": "table_brnz_customers",
+      "type": "column",
+      "layer": "bronze"
+    }
+  },
+  {
+    "data": {
+      "id": "col_brnz_customers_LastName",
+      "label": "LastName",
+      "parent": "table_brnz_customers",
+      "type": "column",
+      "layer": "bronze"
+    }
+  },
+  {
+    "data": {
+      "id": "col_brnz_customers_CustomerID",
+      "label": "CustomerID",
+      "parent": "table_brnz_customers",
+      "type": "column",
+      "layer": "bronze"
+    }
+  },
+  {
+    "data": {
+      "id": "col_brnz_customers_Customer",
+      "label": "Customer",
+      "parent": "table_brnz_customers",
+      "type": "column",
+      "layer": "bronze"
+    }
+  },
+  {
+    "data": {
+      "id": "col_brnz_customers_EmailPromotion",
+      "label": "EmailPromotion",
+      "parent": "table_brnz_customers",
+      "type": "column",
+      "layer": "bronze"
+    }
+  },
+  {
+    "data": {
+      "id": "table_brnz_example",
+      "label": "brnz_example (bronze)",
+      "type": "table",
+      "layer": "bronze"
+    }
+  },
+  {
+    "data": {
+      "id": "col_brnz_example_source_data",
+      "label": "source_data",
+      "parent": "table_brnz_example",
+      "type": "column",
+      "layer": "bronze"
+    }
+  },
+  {
+    "data": {
+      "id": "col_brnz_example_updated_at",
+      "label": "updated_at",
+      "parent": "table_brnz_example",
+      "type": "column",
+      "layer": "bronze"
+    }
+  },
+  {
+    "data": {
+      "id": "col_brnz_example_Customer",
+      "label": "Customer",
+      "parent": "table_brnz_example",
+      "type": "column",
+      "layer": "bronze"
+    }
+  },
+  {
+    "data": {
+      "id": "col_brnz_example_transformed",
+      "label": "transformed",
+      "parent": "table_brnz_example",
+      "type": "column",
+      "layer": "bronze"
+    }
+  },
+  {
+    "data": {
+      "id": "col_brnz_example_id",
+      "label": "id",
+      "parent": "table_brnz_example",
+      "type": "column",
+      "layer": "bronze"
+    }
+  },
+  {
+    "data": {
+      "id": "col_brnz_example_name",
+      "label": "name",
+      "parent": "table_brnz_example",
+      "type": "column",
+      "layer": "bronze"
+    }
+  },
+  {
+    "data": {
+      "id": "col_brnz_example_created_at",
+      "label": "created_at",
+      "parent": "table_brnz_example",
+      "type": "column",
+      "layer": "bronze"
+    }
+  },
+  {
+    "data": {
+      "id": "table_brnz_orders",
+      "label": "brnz_orders (bronze)",
+      "type": "table",
+      "layer": "bronze"
+    }
+  },
+  {
+    "data": {
+      "id": "col_brnz_orders_order_date",
+      "label": "order_date",
+      "parent": "table_brnz_orders",
+      "type": "column",
+      "layer": "bronze"
+    }
+  },
+  {
+    "data": {
+      "id": "col_brnz_orders_ship_date",
+      "label": "ship_date",
+      "parent": "table_brnz_orders",
+      "type": "column",
+      "layer": "bronze"
+    }
+  },
+  {
+    "data": {
+      "id": "col_brnz_orders_sales_order_number",
+      "label": "sales_order_number",
+      "parent": "table_brnz_orders",
+      "type": "column",
+      "layer": "bronze"
+    }
+  },
+  {
+    "data": {
+      "id": "col_brnz_orders_due_date",
+      "label": "due_date",
+      "parent": "table_brnz_orders",
+      "type": "column",
+      "layer": "bronze"
+    }
+  },
+  {
+    "data": {
+      "id": "col_brnz_orders_status",
+      "label": "status",
+      "parent": "table_brnz_orders",
+      "type": "column",
+      "layer": "bronze"
+    }
+  },
+  {
+    "data": {
+      "id": "col_brnz_orders_online_order_flag",
+      "label": "online_order_flag",
+      "parent": "table_brnz_orders",
+      "type": "column",
+      "layer": "bronze"
+    }
+  },
+  {
+    "data": {
+      "id": "col_brnz_orders_customer_id",
+      "label": "customer_id",
+      "parent": "table_brnz_orders",
+      "type": "column",
+      "layer": "bronze"
+    }
+  },
+  {
+    "data": {
+      "id": "col_brnz_orders_purchase_order_number",
+      "label": "purchase_order_number",
+      "parent": "table_brnz_orders",
+      "type": "column",
+      "layer": "bronze"
+    }
+  },
+  {
+    "data": {
+      "id": "col_brnz_orders_order_id",
+      "label": "order_id",
+      "parent": "table_brnz_orders",
+      "type": "column",
+      "layer": "bronze"
+    }
+  },
+  {
+    "data": {
+      "id": "table_brnz_order_details",
+      "label": "brnz_order_details (bronze)",
+      "type": "table",
+      "layer": "bronze"
+    }
+  },
+  {
+    "data": {
+      "id": "col_brnz_order_details_order_detail_id",
+      "label": "order_detail_id",
+      "parent": "table_brnz_order_details",
+      "type": "column",
+      "layer": "bronze"
+    }
+  },
+  {
+    "data": {
+      "id": "col_brnz_order_details_quantity",
+      "label": "quantity",
+      "parent": "table_brnz_order_details",
+      "type": "column",
+      "layer": "bronze"
+    }
+  },
+  {
+    "data": {
+      "id": "col_brnz_order_details_unit_price",
+      "label": "unit_price",
+      "parent": "table_brnz_order_details",
+      "type": "column",
+      "layer": "bronze"
+    }
+  },
+  {
+    "data": {
+      "id": "col_brnz_order_details_unit_price_discount",
+      "label": "unit_price_discount",
+      "parent": "table_brnz_order_details",
+      "type": "column",
+      "layer": "bronze"
+    }
+  },
+  {
+    "data": {
+      "id": "col_brnz_order_details_product_id",
+      "label": "product_id",
+      "parent": "table_brnz_order_details",
+      "type": "column",
+      "layer": "bronze"
+    }
+  },
+  {
+    "data": {
+      "id": "col_brnz_order_details_line_total",
+      "label": "line_total",
+      "parent": "table_brnz_order_details",
+      "type": "column",
+      "layer": "bronze"
+    }
+  },
+  {
+    "data": {
+      "id": "col_brnz_order_details_SalesOrderDetail",
+      "label": "SalesOrderDetail",
+      "parent": "table_brnz_order_details",
+      "type": "column",
+      "layer": "bronze"
+    }
+  },
+  {
+    "data": {
+      "id": "col_brnz_order_details_order_id",
+      "label": "order_id",
+      "parent": "table_brnz_order_details",
+      "type": "column",
+      "layer": "bronze"
+    }
+  },
+  {
+    "data": {
+      "id": "table_brnz_products",
+      "label": "brnz_products (bronze)",
+      "type": "table",
+      "layer": "bronze"
+    }
+  },
+  {
+    "data": {
+      "id": "col_brnz_products_ProductSubcategory",
+      "label": "ProductSubcategory",
+      "parent": "table_brnz_products",
+      "type": "column",
+      "layer": "bronze"
+    }
+  },
+  {
+    "data": {
+      "id": "col_brnz_products_Product",
+      "label": "Product",
+      "parent": "table_brnz_products",
+      "type": "column",
+      "layer": "bronze"
+    }
+  },
+  {
+    "data": {
+      "id": "col_brnz_products_ProductID",
+      "label": "ProductID",
+      "parent": "table_brnz_products",
+      "type": "column",
+      "layer": "bronze"
+    }
+  },
+  {
+    "data": {
+      "id": "col_brnz_products_FinishedGoodsFlag",
+      "label": "FinishedGoodsFlag",
+      "parent": "table_brnz_products",
+      "type": "column",
+      "layer": "bronze"
+    }
+  },
+  {
+    "data": {
+      "id": "col_brnz_products_SafetyStockLevel",
+      "label": "SafetyStockLevel",
+      "parent": "table_brnz_products",
+      "type": "column",
+      "layer": "bronze"
+    }
+  },
+  {
+    "data": {
+      "id": "col_brnz_products_Color",
+      "label": "Color",
+      "parent": "table_brnz_products",
+      "type": "column",
+      "layer": "bronze"
+    }
+  },
+  {
+    "data": {
+      "id": "col_brnz_products_ProductNumber",
+      "label": "ProductNumber",
+      "parent": "table_brnz_products",
+      "type": "column",
+      "layer": "bronze"
+    }
+  },
+  {
+    "data": {
+      "id": "col_brnz_products_MakeFlag",
+      "label": "MakeFlag",
+      "parent": "table_brnz_products",
+      "type": "column",
+      "layer": "bronze"
+    }
+  },
+  {
+    "data": {
+      "id": "col_brnz_products_ProductName",
+      "label": "ProductName",
+      "parent": "table_brnz_products",
+      "type": "column",
+      "layer": "bronze"
+    }
+  },
+  {
+    "data": {
+      "id": "table_brnz_product_categories",
+      "label": "brnz_product_categories (bronze)",
+      "type": "table",
+      "layer": "bronze"
+    }
+  },
+  {
+    "data": {
+      "id": "col_brnz_product_categories_category_id",
+      "label": "category_id",
+      "parent": "table_brnz_product_categories",
+      "type": "column",
+      "layer": "bronze"
+    }
+  },
+  {
+    "data": {
+      "id": "col_brnz_product_categories_modified_date",
+      "label": "modified_date",
+      "parent": "table_brnz_product_categories",
+      "type": "column",
+      "layer": "bronze"
+    }
+  },
+  {
+    "data": {
+      "id": "col_brnz_product_categories_category_name",
+      "label": "category_name",
+      "parent": "table_brnz_product_categories",
+      "type": "column",
+      "layer": "bronze"
+    }
+  },
+  {
+    "data": {
+      "id": "col_brnz_product_categories_ProductCategory",
+      "label": "ProductCategory",
+      "parent": "table_brnz_product_categories",
+      "type": "column",
+      "layer": "bronze"
+    }
+  },
+  {
+    "data": {
+      "id": "table_brnz_sales_orders",
+      "label": "brnz_sales_orders (bronze)",
+      "type": "table",
+      "layer": "bronze"
+    }
+  },
+  {
+    "data": {
+      "id": "col_brnz_sales_orders_order_date",
+      "label": "order_date",
+      "parent": "table_brnz_sales_orders",
+      "type": "column",
+      "layer": "bronze"
+    }
+  },
+  {
+    "data": {
+      "id": "col_brnz_sales_orders_ship_date",
+      "label": "ship_date",
+      "parent": "table_brnz_sales_orders",
+      "type": "column",
+      "layer": "bronze"
+    }
+  },
+  {
+    "data": {
+      "id": "col_brnz_sales_orders_sales_order_number",
+      "label": "sales_order_number",
+      "parent": "table_brnz_sales_orders",
+      "type": "column",
+      "layer": "bronze"
+    }
+  },
+  {
+    "data": {
+      "id": "col_brnz_sales_orders_due_date",
+      "label": "due_date",
+      "parent": "table_brnz_sales_orders",
+      "type": "column",
+      "layer": "bronze"
+    }
+  },
+  {
+    "data": {
+      "id": "col_brnz_sales_orders_status",
+      "label": "status",
+      "parent": "table_brnz_sales_orders",
+      "type": "column",
+      "layer": "bronze"
+    }
+  },
+  {
+    "data": {
+      "id": "col_brnz_sales_orders_sales_order_id",
+      "label": "sales_order_id",
+      "parent": "table_brnz_sales_orders",
+      "type": "column",
+      "layer": "bronze"
+    }
+  },
+  {
+    "data": {
+      "id": "col_brnz_sales_orders_online_order_flag",
+      "label": "online_order_flag",
+      "parent": "table_brnz_sales_orders",
+      "type": "column",
+      "layer": "bronze"
+    }
+  },
+  {
+    "data": {
+      "id": "col_brnz_sales_orders_customer_id",
+      "label": "customer_id",
+      "parent": "table_brnz_sales_orders",
+      "type": "column",
+      "layer": "bronze"
+    }
+  },
+  {
+    "data": {
+      "id": "col_brnz_sales_orders_purchase_order_number",
+      "label": "purchase_order_number",
+      "parent": "table_brnz_sales_orders",
+      "type": "column",
+      "layer": "bronze"
+    }
+  },
+  {
+    "data": {
+      "id": "table_gld_customer_analytics",
+      "label": "gld_customer_analytics (gold)",
+      "type": "table",
+      "layer": "gold"
+    }
+  },
+  {
+    "data": {
+      "id": "table_slvr_customers",
+      "label": "slvr_customers (silver)",
+      "type": "table",
+      "layer": "silver"
+    }
+  },
+  {
+    "data": {
+      "id": "table_slvr_customer_metrics",
+      "label": "slvr_customer_metrics (silver)",
+      "type": "table",
+      "layer": "silver"
+    }
+  },
+  {
+    "data": {
+      "id": "col_gld_customer_analytics_territory_id",
+      "label": "territory_id",
+      "parent": "table_gld_customer_analytics",
+      "type": "column",
+      "layer": "gold"
+    }
+  },
+  {
+    "data": {
+      "id": "col_gld_customer_analytics_total_orders",
+      "label": "total_orders",
+      "parent": "table_gld_customer_analytics",
+      "type": "column",
+      "layer": "gold"
+    }
+  },
+  {
+    "data": {
+      "id": "col_gld_customer_analytics_first_order_date",
+      "label": "first_order_date",
+      "parent": "table_gld_customer_analytics",
+      "type": "column",
+      "layer": "gold"
+    }
+  },
+  {
+    "data": {
+      "id": "col_gld_customer_analytics_slvr_customer_metrics",
+      "label": "slvr_customer_metrics",
+      "parent": "table_gld_customer_analytics",
+      "type": "column",
+      "layer": "gold"
+    }
+  },
+  {
+    "data": {
+      "id": "col_gld_customer_analytics_slvr_customers",
+      "label": "slvr_customers",
+      "parent": "table_gld_customer_analytics",
+      "type": "column",
+      "layer": "gold"
+    }
+  },
+  {
+    "data": {
+      "id": "col_gld_customer_analytics_customer_id",
+      "label": "customer_id",
+      "parent": "table_gld_customer_analytics",
+      "type": "column",
+      "layer": "gold"
+    }
+  },
+  {
+    "data": {
+      "id": "col_gld_customer_analytics_last_order_date",
+      "label": "last_order_date",
+      "parent": "table_gld_customer_analytics",
+      "type": "column",
+      "layer": "gold"
+    }
+  },
+  {
+    "data": {
+      "id": "col_gld_customer_analytics_avg_order_value",
+      "label": "avg_order_value",
+      "parent": "table_gld_customer_analytics",
+      "type": "column",
+      "layer": "gold"
+    }
+  },
+  {
+    "data": {
+      "id": "col_gld_customer_analytics_lifetime_value",
+      "label": "lifetime_value",
+      "parent": "table_gld_customer_analytics",
+      "type": "column",
+      "layer": "gold"
+    }
+  },
+  {
+    "data": {
+      "id": "table_gld_customer_metrics",
+      "label": "gld_customer_metrics (gold)",
+      "type": "table",
+      "layer": "gold"
+    }
+  },
+  {
+    "data": {
+      "id": "table_slvr_sales_orders",
+      "label": "slvr_sales_orders (silver)",
+      "type": "table",
+      "layer": "silver"
+    }
+  },
+  {
+    "data": {
+      "id": "col_gld_customer_metrics_full_name",
+      "label": "full_name",
+      "parent": "table_gld_customer_metrics",
+      "type": "column",
+      "layer": "gold"
+    }
+  },
+  {
+    "data": {
+      "id": "col_gld_customer_metrics_territory_id",
+      "label": "territory_id",
+      "parent": "table_gld_customer_metrics",
+      "type": "column",
+      "layer": "gold"
+    }
+  },
+  {
+    "data": {
+      "id": "col_gld_customer_metrics_total_orders",
+      "label": "total_orders",
+      "parent": "table_gld_customer_metrics",
+      "type": "column",
+      "layer": "gold"
+    }
+  },
+  {
+    "data": {
+      "id": "col_gld_customer_metrics_total_items_purchased",
+      "label": "total_items_purchased",
+      "parent": "table_gld_customer_metrics",
+      "type": "column",
+      "layer": "gold"
+    }
+  },
+  {
+    "data": {
+      "id": "col_gld_customer_metrics_total_revenue",
+      "label": "total_revenue",
+      "parent": "table_gld_customer_metrics",
+      "type": "column",
+      "layer": "gold"
+    }
+  },
+  {
+    "data": {
+      "id": "col_gld_customer_metrics_slvr_customers",
+      "label": "slvr_customers",
+      "parent": "table_gld_customer_metrics",
+      "type": "column",
+      "layer": "gold"
+    }
+  },
+  {
+    "data": {
+      "id": "col_gld_customer_metrics_slvr_sales_orders",
+      "label": "slvr_sales_orders",
+      "parent": "table_gld_customer_metrics",
+      "type": "column",
+      "layer": "gold"
+    }
+  },
+  {
+    "data": {
+      "id": "col_gld_customer_metrics_customer_id",
+      "label": "customer_id",
+      "parent": "table_gld_customer_metrics",
+      "type": "column",
+      "layer": "gold"
+    }
+  },
+  {
+    "data": {
+      "id": "col_gld_customer_metrics_avg_order_value",
+      "label": "avg_order_value",
+      "parent": "table_gld_customer_metrics",
+      "type": "column",
+      "layer": "gold"
+    }
+  },
+  {
+    "data": {
+      "id": "table_gld_product_analytics",
+      "label": "gld_product_analytics (gold)",
+      "type": "table",
+      "layer": "gold"
+    }
+  },
+  {
+    "data": {
+      "id": "table_slvr_products",
+      "label": "slvr_products (silver)",
+      "type": "table",
+      "layer": "silver"
+    }
+  },
+  {
+    "data": {
+      "id": "table_slvr_product_performance",
+      "label": "slvr_product_performance (silver)",
+      "type": "table",
+      "layer": "silver"
+    }
+  },
+  {
+    "data": {
+      "id": "col_gld_product_analytics_product_name",
+      "label": "product_name",
+      "parent": "table_gld_product_analytics",
+      "type": "column",
+      "layer": "gold"
+    }
+  },
+  {
+    "data": {
+      "id": "col_gld_product_analytics_times_ordered",
+      "label": "times_ordered",
+      "parent": "table_gld_product_analytics",
+      "type": "column",
+      "layer": "gold"
+    }
+  },
+  {
+    "data": {
+      "id": "col_gld_product_analytics_list_price",
+      "label": "list_price",
+      "parent": "table_gld_product_analytics",
+      "type": "column",
+      "layer": "gold"
+    }
+  },
+  {
+    "data": {
+      "id": "col_gld_product_analytics_product_number",
+      "label": "product_number",
+      "parent": "table_gld_product_analytics",
+      "type": "column",
+      "layer": "gold"
+    }
+  },
+  {
+    "data": {
+      "id": "col_gld_product_analytics_slvr_products",
+      "label": "slvr_products",
+      "parent": "table_gld_product_analytics",
+      "type": "column",
+      "layer": "gold"
+    }
+  },
+  {
+    "data": {
+      "id": "col_gld_product_analytics_product_id",
+      "label": "product_id",
+      "parent": "table_gld_product_analytics",
+      "type": "column",
+      "layer": "gold"
+    }
+  },
+  {
+    "data": {
+      "id": "col_gld_product_analytics_slvr_product_performance",
+      "label": "slvr_product_performance",
+      "parent": "table_gld_product_analytics",
+      "type": "column",
+      "layer": "gold"
+    }
+  },
+  {
+    "data": {
+      "id": "col_gld_product_analytics_color",
+      "label": "color",
+      "parent": "table_gld_product_analytics",
+      "type": "column",
+      "layer": "gold"
+    }
+  },
+  {
+    "data": {
+      "id": "table_gld_product_performance",
+      "label": "gld_product_performance (gold)",
+      "type": "table",
+      "layer": "gold"
+    }
+  },
+  {
+    "data": {
+      "id": "col_gld_product_performance_product_name",
+      "label": "product_name",
+      "parent": "table_gld_product_performance",
+      "type": "column",
+      "layer": "gold"
+    }
+  },
+  {
+    "data": {
+      "id": "col_gld_product_performance_subcategory_name",
+      "label": "subcategory_name",
+      "parent": "table_gld_product_performance",
+      "type": "column",
+      "layer": "gold"
+    }
+  },
+  {
+    "data": {
+      "id": "col_gld_product_performance_total_orders",
+      "label": "total_orders",
+      "parent": "table_gld_product_performance",
+      "type": "column",
+      "layer": "gold"
+    }
+  },
+  {
+    "data": {
+      "id": "col_gld_product_performance_list_price",
+      "label": "list_price",
+      "parent": "table_gld_product_performance",
+      "type": "column",
+      "layer": "gold"
+    }
+  },
+  {
+    "data": {
+      "id": "col_gld_product_performance_standard_cost",
+      "label": "standard_cost",
+      "parent": "table_gld_product_performance",
+      "type": "column",
+      "layer": "gold"
+    }
+  },
+  {
+    "data": {
+      "id": "col_gld_product_performance_slvr_products",
+      "label": "slvr_products",
+      "parent": "table_gld_product_performance",
+      "type": "column",
+      "layer": "gold"
+    }
+  },
+  {
+    "data": {
+      "id": "col_gld_product_performance_slvr_sales_orders",
+      "label": "slvr_sales_orders",
+      "parent": "table_gld_product_performance",
+      "type": "column",
+      "layer": "gold"
+    }
+  },
+  {
+    "data": {
+      "id": "col_gld_product_performance_color",
+      "label": "color",
+      "parent": "table_gld_product_performance",
+      "type": "column",
+      "layer": "gold"
+    }
+  },
+  {
+    "data": {
+      "id": "col_gld_product_performance_product_id",
+      "label": "product_id",
+      "parent": "table_gld_product_performance",
+      "type": "column",
+      "layer": "gold"
+    }
+  },
+  {
+    "data": {
+      "id": "table_gld_sales_summary",
+      "label": "gld_sales_summary (gold)",
+      "type": "table",
+      "layer": "gold"
+    }
+  },
+  {
+    "data": {
+      "id": "col_gld_sales_summary_total_orders",
+      "label": "total_orders",
+      "parent": "table_gld_sales_summary",
+      "type": "column",
+      "layer": "gold"
+    }
+  },
+  {
+    "data": {
+      "id": "col_gld_sales_summary_order_date",
+      "label": "order_date",
+      "parent": "table_gld_sales_summary",
+      "type": "column",
+      "layer": "gold"
+    }
+  },
+  {
+    "data": {
+      "id": "col_gld_sales_summary_total_revenue",
+      "label": "total_revenue",
+      "parent": "table_gld_sales_summary",
+      "type": "column",
+      "layer": "gold"
+    }
+  },
+  {
+    "data": {
+      "id": "col_gld_sales_summary_unique_customers",
+      "label": "unique_customers",
+      "parent": "table_gld_sales_summary",
+      "type": "column",
+      "layer": "gold"
+    }
+  },
+  {
+    "data": {
+      "id": "col_gld_sales_summary_total_items_sold",
+      "label": "total_items_sold",
+      "parent": "table_gld_sales_summary",
+      "type": "column",
+      "layer": "gold"
+    }
+  },
+  {
+    "data": {
+      "id": "col_gld_sales_summary_offline_orders",
+      "label": "offline_orders",
+      "parent": "table_gld_sales_summary",
+      "type": "column",
+      "layer": "gold"
+    }
+  },
+  {
+    "data": {
+      "id": "col_gld_sales_summary_slvr_sales_orders",
+      "label": "slvr_sales_orders",
+      "parent": "table_gld_sales_summary",
+      "type": "column",
+      "layer": "gold"
+    }
+  },
+  {
+    "data": {
+      "id": "col_gld_sales_summary_online_orders",
+      "label": "online_orders",
+      "parent": "table_gld_sales_summary",
+      "type": "column",
+      "layer": "gold"
+    }
+  },
+  {
+    "data": {
+      "id": "col_gld_sales_summary_avg_order_line_value",
+      "label": "avg_order_line_value",
+      "parent": "table_gld_sales_summary",
+      "type": "column",
+      "layer": "gold"
+    }
+  },
+  {
+    "data": {
+      "id": "col_slvr_customers_FirstName",
+      "label": "FirstName",
+      "parent": "table_slvr_customers",
+      "type": "column",
+      "layer": "silver"
+    }
+  },
+  {
+    "data": {
+      "id": "col_slvr_customers_full_name",
+      "label": "full_name",
+      "parent": "table_slvr_customers",
+      "type": "column",
+      "layer": "silver"
+    }
+  },
+  {
+    "data": {
+      "id": "col_slvr_customers_last_name",
+      "label": "last_name",
+      "parent": "table_slvr_customers",
+      "type": "column",
+      "layer": "silver"
+    }
+  },
+  {
+    "data": {
+      "id": "col_slvr_customers_LastName",
+      "label": "LastName",
+      "parent": "table_slvr_customers",
+      "type": "column",
+      "layer": "silver"
+    }
+  },
+  {
+    "data": {
+      "id": "col_slvr_customers_customer_id",
+      "label": "customer_id",
+      "parent": "table_slvr_customers",
+      "type": "column",
+      "layer": "silver"
+    }
+  },
+  {
+    "data": {
+      "id": "col_slvr_customers_first_name",
+      "label": "first_name",
+      "parent": "table_slvr_customers",
+      "type": "column",
+      "layer": "silver"
+    }
+  },
+  {
+    "data": {
+      "id": "col_slvr_customers_brnz_customers",
+      "label": "brnz_customers",
+      "parent": "table_slvr_customers",
+      "type": "column",
+      "layer": "silver"
+    }
+  },
+  {
+    "data": {
+      "id": "col_slvr_customer_metrics_order_date",
+      "label": "order_date",
+      "parent": "table_slvr_customer_metrics",
+      "type": "column",
+      "layer": "silver"
+    }
+  },
+  {
+    "data": {
+      "id": "col_slvr_customer_metrics_d",
+      "label": "d",
+      "parent": "table_slvr_customer_metrics",
+      "type": "column",
+      "layer": "silver"
+    }
+  },
+  {
+    "data": {
+      "id": "col_slvr_customer_metrics_total_amount",
+      "label": "total_amount",
+      "parent": "table_slvr_customer_metrics",
+      "type": "column",
+      "layer": "silver"
+    }
+  },
+  {
+    "data": {
+      "id": "col_slvr_customer_metrics_customer_id",
+      "label": "customer_id",
+      "parent": "table_slvr_customer_metrics",
+      "type": "column",
+      "layer": "silver"
+    }
+  },
+  {
+    "data": {
+      "id": "col_slvr_customer_metrics_o",
+      "label": "o",
+      "parent": "table_slvr_customer_metrics",
+      "type": "column",
+      "layer": "silver"
+    }
+  },
+  {
+    "data": {
+      "id": "col_slvr_customer_metrics_order_id",
+      "label": "order_id",
+      "parent": "table_slvr_customer_metrics",
+      "type": "column",
+      "layer": "silver"
+    }
+  },
+  {
+    "data": {
+      "id": "col_slvr_products_product_name",
+      "label": "product_name",
+      "parent": "table_slvr_products",
+      "type": "column",
+      "layer": "silver"
+    }
+  },
+  {
+    "data": {
+      "id": "col_slvr_products_standard_cost",
+      "label": "standard_cost",
+      "parent": "table_slvr_products",
+      "type": "column",
+      "layer": "silver"
+    }
+  },
+  {
+    "data": {
+      "id": "col_slvr_products_list_price",
+      "label": "list_price",
+      "parent": "table_slvr_products",
+      "type": "column",
+      "layer": "silver"
+    }
+  },
+  {
+    "data": {
+      "id": "col_slvr_products_product_number",
+      "label": "product_number",
+      "parent": "table_slvr_products",
+      "type": "column",
+      "layer": "silver"
+    }
+  },
+  {
+    "data": {
+      "id": "col_slvr_products_Color",
+      "label": "Color",
+      "parent": "table_slvr_products",
+      "type": "column",
+      "layer": "silver"
+    }
+  },
+  {
+    "data": {
+      "id": "col_slvr_products_color",
+      "label": "color",
+      "parent": "table_slvr_products",
+      "type": "column",
+      "layer": "silver"
+    }
+  },
+  {
+    "data": {
+      "id": "col_slvr_products_product_id",
+      "label": "product_id",
+      "parent": "table_slvr_products",
+      "type": "column",
+      "layer": "silver"
+    }
+  },
+  {
+    "data": {
+      "id": "col_slvr_products_Size",
+      "label": "Size",
+      "parent": "table_slvr_products",
+      "type": "column",
+      "layer": "silver"
+    }
+  },
+  {
+    "data": {
+      "id": "col_slvr_products_brnz_products",
+      "label": "brnz_products",
+      "parent": "table_slvr_products",
+      "type": "column",
+      "layer": "silver"
+    }
+  },
+  {
+    "data": {
+      "id": "col_slvr_product_performance_quantity",
+      "label": "quantity",
+      "parent": "table_slvr_product_performance",
+      "type": "column",
+      "layer": "silver"
+    }
+  },
+  {
+    "data": {
+      "id": "col_slvr_product_performance_brnz_order_details",
+      "label": "brnz_order_details",
+      "parent": "table_slvr_product_performance",
+      "type": "column",
+      "layer": "silver"
+    }
+  },
+  {
+    "data": {
+      "id": "col_slvr_product_performance_times_ordered",
+      "label": "times_ordered",
+      "parent": "table_slvr_product_performance",
+      "type": "column",
+      "layer": "silver"
+    }
+  },
+  {
+    "data": {
+      "id": "col_slvr_product_performance_unit_price",
+      "label": "unit_price",
+      "parent": "table_slvr_product_performance",
+      "type": "column",
+      "layer": "silver"
+    }
+  },
+  {
+    "data": {
+      "id": "col_slvr_product_performance_product_id",
+      "label": "product_id",
+      "parent": "table_slvr_product_performance",
+      "type": "column",
+      "layer": "silver"
+    }
+  },
+  {
+    "data": {
+      "id": "col_slvr_product_performance_line_total",
+      "label": "line_total",
+      "parent": "table_slvr_product_performance",
+      "type": "column",
+      "layer": "silver"
+    }
+  },
+  {
+    "data": {
+      "id": "col_slvr_product_performance_order_id",
+      "label": "order_id",
+      "parent": "table_slvr_product_performance",
+      "type": "column",
+      "layer": "silver"
+    }
+  },
+  {
+    "data": {
+      "id": "col_slvr_sales_orders_order_detail_id",
+      "label": "order_detail_id",
+      "parent": "table_slvr_sales_orders",
+      "type": "column",
+      "layer": "silver"
+    }
+  },
+  {
+    "data": {
+      "id": "col_slvr_sales_orders_brnz_orders",
+      "label": "brnz_orders",
+      "parent": "table_slvr_sales_orders",
+      "type": "column",
+      "layer": "silver"
+    }
+  },
+  {
+    "data": {
+      "id": "col_slvr_sales_orders_order_date",
+      "label": "order_date",
+      "parent": "table_slvr_sales_orders",
+      "type": "column",
+      "layer": "silver"
+    }
+  },
+  {
+    "data": {
+      "id": "col_slvr_sales_orders_brnz_order_details",
+      "label": "brnz_order_details",
+      "parent": "table_slvr_sales_orders",
+      "type": "column",
+      "layer": "silver"
+    }
+  },
+  {
+    "data": {
+      "id": "col_slvr_sales_orders_ship_date",
+      "label": "ship_date",
+      "parent": "table_slvr_sales_orders",
+      "type": "column",
+      "layer": "silver"
+    }
+  },
+  {
+    "data": {
+      "id": "col_slvr_sales_orders_due_date",
+      "label": "due_date",
+      "parent": "table_slvr_sales_orders",
+      "type": "column",
+      "layer": "silver"
+    }
+  },
+  {
+    "data": {
+      "id": "col_slvr_sales_orders_status",
+      "label": "status",
+      "parent": "table_slvr_sales_orders",
+      "type": "column",
+      "layer": "silver"
+    }
+  },
+  {
+    "data": {
+      "id": "col_slvr_sales_orders_sales_order_id",
+      "label": "sales_order_id",
+      "parent": "table_slvr_sales_orders",
+      "type": "column",
+      "layer": "silver"
+    }
+  },
+  {
+    "data": {
+      "id": "col_slvr_sales_orders_online_order_flag",
+      "label": "online_order_flag",
+      "parent": "table_slvr_sales_orders",
+      "type": "column",
+      "layer": "silver"
+    }
+  },
+  {
+    "data": {
+      "id": "e_table_slvr_customers_table_gld_customer_analytics",
+      "source": "table_slvr_customers",
+      "target": "table_gld_customer_analytics",
+      "type": "table_edge"
+    }
+  },
+  {
+    "data": {
+      "id": "e_table_slvr_customer_metrics_table_gld_customer_analytics",
+      "source": "table_slvr_customer_metrics",
+      "target": "table_gld_customer_analytics",
+      "type": "table_edge"
+    }
+  },
+  {
+    "data": {
+      "id": "e_table_slvr_customers_table_gld_customer_metrics",
+      "source": "table_slvr_customers",
+      "target": "table_gld_customer_metrics",
+      "type": "table_edge"
+    }
+  },
+  {
+    "data": {
+      "id": "e_table_slvr_sales_orders_table_gld_customer_metrics",
+      "source": "table_slvr_sales_orders",
+      "target": "table_gld_customer_metrics",
+      "type": "table_edge"
+    }
+  },
+  {
+    "data": {
+      "id": "e_table_slvr_products_table_gld_product_analytics",
+      "source": "table_slvr_products",
+      "target": "table_gld_product_analytics",
+      "type": "table_edge"
+    }
+  },
+  {
+    "data": {
+      "id": "e_table_slvr_product_performance_table_gld_product_analytics",
+      "source": "table_slvr_product_performance",
+      "target": "table_gld_product_analytics",
+      "type": "table_edge"
+    }
+  },
+  {
+    "data": {
+      "id": "e_table_slvr_products_table_gld_product_performance",
+      "source": "table_slvr_products",
+      "target": "table_gld_product_performance",
+      "type": "table_edge"
+    }
+  },
+  {
+    "data": {
+      "id": "e_table_slvr_sales_orders_table_gld_product_performance",
+      "source": "table_slvr_sales_orders",
+      "target": "table_gld_product_performance",
+      "type": "table_edge"
+    }
+  },
+  {
+    "data": {
+      "id": "e_table_slvr_sales_orders_table_gld_sales_summary",
+      "source": "table_slvr_sales_orders",
+      "target": "table_gld_sales_summary",
+      "type": "table_edge"
+    }
+  },
+  {
+    "data": {
+      "id": "e_table_brnz_customers_table_slvr_customers",
+      "source": "table_brnz_customers",
+      "target": "table_slvr_customers",
+      "type": "table_edge"
+    }
+  },
+  {
+    "data": {
+      "id": "e_table_brnz_orders_table_slvr_customer_metrics",
+      "source": "table_brnz_orders",
+      "target": "table_slvr_customer_metrics",
+      "type": "table_edge"
+    }
+  },
+  {
+    "data": {
+      "id": "e_table_brnz_order_details_table_slvr_customer_metrics",
+      "source": "table_brnz_order_details",
+      "target": "table_slvr_customer_metrics",
+      "type": "table_edge"
+    }
+  },
+  {
+    "data": {
+      "id": "e_table_brnz_products_table_slvr_products",
+      "source": "table_brnz_products",
+      "target": "table_slvr_products",
+      "type": "table_edge"
+    }
+  },
+  {
+    "data": {
+      "id": "e_table_brnz_order_details_table_slvr_product_performance",
+      "source": "table_brnz_order_details",
+      "target": "table_slvr_product_performance",
+      "type": "table_edge"
+    }
+  },
+  {
+    "data": {
+      "id": "e_table_brnz_orders_table_slvr_sales_orders",
+      "source": "table_brnz_orders",
+      "target": "table_slvr_sales_orders",
+      "type": "table_edge"
+    }
+  },
+  {
+    "data": {
+      "id": "e_table_brnz_order_details_table_slvr_sales_orders",
+      "source": "table_brnz_order_details",
+      "target": "table_slvr_sales_orders",
+      "type": "table_edge"
+    }
+  }
+];
+
+        const cy = cytoscape({
+            container: document.getElementById('cy'),
+            elements: elements,
+            boxSelectionEnabled: false,
+            autounselectify: false,
+            style: [
+                {
+                    selector: 'node[type = "table"]',
+                    style: {
+                        'background-color': '#f1f5f9',
+                        'label': 'data(label)',
+                        'text-valign': 'top',
+                        'text-halign': 'center',
+                        'font-weight': 'bold',
+                        'font-size': '13px',
+                        'color': '#0f172a',
+                        'border-width': 2,
+                        'border-color': '#cbd5e1',
+                        'padding': '12px'
+                    }
+                },
+                {
+                    selector: 'node[type = "column"]',
+                    style: {
+                        'background-color': '#ffffff',
+                        'label': 'data(label)',
+                        'font-size': '11px',
+                        'color': '#334155',
+                        'border-width': 1,
+                        'border-color': '#94a3b8',
+                        'width': 'label',
+                        'padding': '6px',
+                        'shape': 'roundrectangle'
+                    }
+                },
+                {
+                    selector: 'node[layer = "bronze"][type = "table"]',
+                    style: { 'border-color': '#cd7f32', 'background-color': '#fdf8f4' }
+                },
+                {
+                    selector: 'node[layer = "silver"][type = "table"]',
+                    style: { 'border-color': '#64748b', 'background-color': '#f8fafc' }
+                },
+                {
+                    selector: 'node[layer = "gold"][type = "table"]',
+                    style: { 'border-color': '#eab308', 'background-color': '#fefce8' }
+                },
+                {
+                    selector: 'edge',
+                    style: {
+                        'width': 2,
+                        'line-color': '#cbd5e1',
+                        'target-arrow-color': '#cbd5e1',
+                        'target-arrow-shape': 'triangle',
+                        'curve-style': 'bezier'
+                    }
+                },
+                {
+                    selector: '.highlighted',
+                    style: {
+                        'background-color': '#3b82f6',
+                        'line-color': '#3b82f6',
+                        'target-arrow-color': '#3b82f6',
+                        'border-color': '#1d4ed8',
+                        'border-width': 3,
+                        'color': '#1e3a8a',
+                        'font-weight': 'bold',
+                        'z-index': 999
+                    }
+                },
+                {
+                    selector: '.faded',
+                    style: {
+                        'opacity': 0.15
+                    }
+                }
+            ],
+            layout: {
+                name: 'dagre',
+                rankDir: 'LR',
+                nodeSep: 30,
+                rankSep: 80,
+                padding: 40
+            }
+        });
+
+        function resetHighlight() {
+            cy.elements().removeClass('highlighted faded');
+        }
+
+        cy.on('tap', 'node', function(evt) {
+            const node = evt.target;
+            resetHighlight();
+            const connected = node.outgoers().union(node.incomers()).union(node);
+            cy.elements().difference(connected).addClass('faded');
+            connected.addClass('highlighted');
+        });
+
+        cy.on('tap', function(evt) {
+            if (evt.target === cy) {
+                resetHighlight();
+            }
+        });
+    </script>
+</body>
+</html>

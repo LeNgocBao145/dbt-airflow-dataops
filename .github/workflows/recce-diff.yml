@@ -1,0 +1,165 @@
+name: Recce PR Data Impact Analysis
+
+on:
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - 'dbt/**'
+      - 'scripts/patch_recce_sqlserver_profile.py'
+      - 'scripts/render_recce_pr_comment.py'
+      - 'scripts/generate_recce_config.py'
+      - '.github/workflows/recce-diff.yml'
+
+env:
+  DBT_CI_PASSWORD: 'YourStrong@Passw0rd'
+
+jobs:
+  recce-diff:
+    name: Run Recce Impact Analysis
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+      - name: Checkout PR Branch (Current)
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+          cache: 'pip'
+
+      - name: Start and seed SQL Server for CI
+        run: |
+          docker run -d --name sqlserver_ci -p 1433:1433 \
+            -e "ACCEPT_EULA=Y" \
+            -e "SA_PASSWORD=YourStrong@Passw0rd" \
+            mcr.microsoft.com/mssql/server:2019-latest
+
+          echo "Waiting for SQL Server to be ready..."
+          for i in {1..30}; do
+            if docker exec sqlserver_ci bash -c "/opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa -P 'YourStrong@Passw0rd' -Q 'SELECT 1' 2>/dev/null || /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P 'YourStrong@Passw0rd' -Q 'SELECT 1' 2>/dev/null"; then
+              break
+            fi
+            sleep 2
+          done
+
+          curl -fsSL -o /tmp/AdventureWorks2014.bak https://github.com/Microsoft/sql-server-samples/releases/download/adventureworks/AdventureWorks2014.bak
+          docker cp /tmp/AdventureWorks2014.bak sqlserver_ci:/tmp/AdventureWorks2014.bak
+          sqlcmd() {
+            if docker exec sqlserver_ci test -x /opt/mssql-tools18/bin/sqlcmd; then
+              docker exec sqlserver_ci /opt/mssql-tools18/bin/sqlcmd -C "$@"
+            else
+              docker exec sqlserver_ci /opt/mssql-tools/bin/sqlcmd "$@"
+            fi
+          }
+          sqlcmd -S localhost -U sa -P 'YourStrong@Passw0rd' -Q "RESTORE DATABASE AdventureWorks2014 FROM DISK = '/tmp/AdventureWorks2014.bak' WITH MOVE 'AdventureWorks2014_Data' TO '/var/opt/mssql/data/AdventureWorks2014.mdf', MOVE 'AdventureWorks2014_Log' TO '/var/opt/mssql/data/AdventureWorks2014_log.ldf'"
+          sqlcmd -S localhost -U sa -P 'YourStrong@Passw0rd' -Q "RESTORE DATABASE AdventureWorks2014_CI FROM DISK = '/tmp/AdventureWorks2014.bak' WITH MOVE 'AdventureWorks2014_Data' TO '/var/opt/mssql/data/AdventureWorks2014_CI.mdf', MOVE 'AdventureWorks2014_Log' TO '/var/opt/mssql/data/AdventureWorks2014_CI_log.ldf'"
+          sqlcmd -S localhost -U sa -P 'YourStrong@Passw0rd' -Q "RESTORE DATABASE AdventureWorks2014_PR FROM DISK = '/tmp/AdventureWorks2014.bak' WITH MOVE 'AdventureWorks2014_Data' TO '/var/opt/mssql/data/AdventureWorks2014_PR.mdf', MOVE 'AdventureWorks2014_Log' TO '/var/opt/mssql/data/AdventureWorks2014_PR_log.ldf'"
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get install -y libltdl7 libkrb5-3 libgssapi-krb5-2
+          pip install "dbt-sqlserver[mssql]" recce pyodbc
+          python scripts/patch_recce_sqlserver_profile.py
+
+      - name: Checkout Base Branch (Target)
+        run: |
+          git checkout ${{ github.base_ref }}
+
+      - name: Build Base Models and Artifacts
+        run: |
+          cd dbt
+          dbt deps --profiles-dir .
+          dbt run --target ci --profiles-dir .
+          dbt docs generate --target ci --target-path ../target-base --profiles-dir .
+          test -s ../target-base/manifest.json && test -s ../target-base/catalog.json
+
+      - name: Return to PR Branch
+        run: |
+          git checkout ${{ github.head_ref || github.ref_name }}
+
+      - name: Build Current PR Models and Artifacts
+        run: |
+          cd dbt
+          dbt deps --profiles-dir .
+          DEMO_VARS='{recce_demo_mismatch: true}'
+          dbt run --target pr --vars "$DEMO_VARS" --profiles-dir .
+          dbt docs generate --target pr --vars "$DEMO_VARS" --profiles-dir .
+          test -s target/manifest.json && test -s target/catalog.json
+
+      - name: Generate Recce checks for changed tables
+        run: |
+          python scripts/generate_recce_config.py --base-manifest target-base/manifest.json --current-manifest dbt/target/manifest.json --output dbt/recce.yml
+
+      - name: Run dbt tests
+        id: dbt_tests
+        run: |
+          cd dbt
+          set +e
+          dbt test --target pr --vars '{recce_demo_mismatch: true}' --profiles-dir .
+          test_exit_code=$?
+          echo "exit_code=$test_exit_code" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Run Recce and Build PR Report
+        id: recce_summary
+        if: always()
+        run: |
+          cd dbt
+          set +e
+          recce run --target pr --target-path target --target-base-path ../target-base --profiles-dir . --state-file recce_state.json
+          recce_exit_code=$?
+          set -e
+          echo "exit_code=$recce_exit_code" >> "$GITHUB_OUTPUT"
+          if [ -s recce_state.json ]; then
+            recce summary recce_state.json > ../recce_summary.md || echo "Recce summary generation failed." > ../recce_summary.md
+          else
+            echo "Recce did not produce recce_state.json." > ../recce_summary.md
+          fi
+          printf '\n## Data Mismatch Detected (Demo)\n\nCurrent `gld_sales_summary` intentionally excludes its latest order date; Base retains it.\n' >> ../recce_summary.md
+          cd ..
+          python scripts/render_recce_pr_comment.py --summary recce_summary.md --state dbt/recce_state.json --base-manifest target-base/manifest.json --current-manifest dbt/target/manifest.json --run-results dbt/target/run_results.json --dbt-test-exit-code "${{ steps.dbt_tests.outputs.exit_code }}" --output pr_comment.md
+
+      - name: Comment Recce Summary on PR
+        uses: actions/github-script@v6
+        if: always()
+        with:
+          script: |
+            const fs = require('fs');
+            const summaryPath = 'pr_comment.md';
+            if (fs.existsSync(summaryPath)) {
+              const body = fs.readFileSync(summaryPath, 'utf8');
+              if (body.trim().length > 0) {
+                github.rest.issues.createComment({
+                  issue_number: context.issue.number,
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  body: `### 🔍 Recce Data Impact & Lineage Diff Report\n\n${body}`
+                });
+              }
+            } else {
+              console.log('No recce summary found.');
+            }
+      - name: Upload Recce review artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: recce-review-${{ github.run_id }}
+          path: |
+            dbt/recce_state.json
+            dbt/target/run_results.json
+            recce_summary.md
+            pr_comment.md
+          if-no-files-found: warn
+
+      - name: Fail job when validation failed
+        if: always()
+        run: |
+          if [ "${{ steps.dbt_tests.outputs.exit_code }}" != "0" ] || [ "${{ steps.recce_summary.outputs.exit_code }}" != "0" ]; then
+            exit 1
+          fi

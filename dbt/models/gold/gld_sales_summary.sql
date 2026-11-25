@@ -20,6 +20,12 @@ daily_summary as (
         sum(case when order_channel = 'Offline' then 1 else 0 end) as offline_orders,
         sum(case when has_discount = 1 then line_total else 0 end) as discounted_revenue
     from sales
+    {% if var('recce_demo_mismatch', false) %}
+    -- Demo-only: remove the latest order date from Current so Recce detects a mismatch.
+    where cast(order_date as date) < (
+        select max(cast(order_date as date)) from sales
+    )
+    {% endif %}
     group by cast(order_date as date)
 )
 
