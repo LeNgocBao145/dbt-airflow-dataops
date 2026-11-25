@@ -6,6 +6,7 @@ on:
     paths:
       - 'dbt/**'
       - 'scripts/patch_recce_sqlserver_profile.py'
+      - 'scripts/render_recce_pr_comment.py'
       - '.github/workflows/recce-diff.yml'
 
 env:
@@ -90,16 +91,34 @@ jobs:
           dbt docs generate --target pr --vars "$DEMO_VARS" --profiles-dir .
           test -s target/manifest.json && test -s target/catalog.json
 
-      - name: Run Recce Lineage & Schema Diff
-        id: recce_summary
+      - name: Run dbt tests
+        id: dbt_tests
         run: |
           cd dbt
-          # The PR build artifacts are in target/; base artifacts are in ../target-base.
-          test -s target/manifest.json && test -s target/catalog.json
-          # Execute configured data checks and save results before generating the PR summary.
+          set +e
+          dbt test --target pr --vars '{recce_demo_mismatch: true}' --profiles-dir .
+          test_exit_code=$?
+          echo "exit_code=$test_exit_code" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Run Recce and Build PR Report
+        id: recce_summary
+        if: always()
+        run: |
+          cd dbt
+          set +e
           recce run --target pr --target-path target --target-base-path ../target-base --profiles-dir . --state-file recce_state.json
-          recce summary recce_state.json > ../recce_summary.md
+          recce_exit_code=$?
+          set -e
+          echo "exit_code=$recce_exit_code" >> "$GITHUB_OUTPUT"
+          if [ -s recce_state.json ]; then
+            recce summary recce_state.json > ../recce_summary.md || echo "Recce summary generation failed." > ../recce_summary.md
+          else
+            echo "Recce did not produce recce_state.json." > ../recce_summary.md
+          fi
           printf '\n## Data Mismatch Detected (Demo)\n\nCurrent `gld_sales_summary` intentionally excludes its latest order date; Base retains it.\n' >> ../recce_summary.md
+          cd ..
+          python scripts/render_recce_pr_comment.py --summary recce_summary.md --state dbt/recce_state.json --base-manifest target-base/manifest.json --current-manifest dbt/target/manifest.json --run-results dbt/target/run_results.json --dbt-test-exit-code "${{ steps.dbt_tests.outputs.exit_code }}" --output pr_comment.md
 
       - name: Comment Recce Summary on PR
         uses: actions/github-script@v6
@@ -107,7 +126,7 @@ jobs:
         with:
           script: |
             const fs = require('fs');
-            const summaryPath = 'recce_summary.md';
+            const summaryPath = 'pr_comment.md';
             if (fs.existsSync(summaryPath)) {
               const body = fs.readFileSync(summaryPath, 'utf8');
               if (body.trim().length > 0) {
@@ -121,3 +140,21 @@ jobs:
             } else {
               console.log('No recce summary found.');
             }
+      - name: Upload Recce review artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: recce-review-${{ github.run_id }}
+          path: |
+            dbt/recce_state.json
+            dbt/target/run_results.json
+            recce_summary.md
+            pr_comment.md
+          if-no-files-found: warn
+
+      - name: Fail job when validation failed
+        if: always()
+        run: |
+          if [ "${{ steps.dbt_tests.outputs.exit_code }}" != "0" ] || [ "${{ steps.recce_summary.outputs.exit_code }}" != "0" ]; then
+            exit 1
+          fi
