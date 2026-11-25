@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
   pages: write
   id-token: write
 
@@ -28,24 +28,86 @@ jobs:
         with:
           python-version: '3.9'
 
-      - name: Install dependencies
+      - name: Start and seed SQL Server
         run: |
-          python -m pip install --upgrade pip
-          pip install dbt-sqlserver sqlglot
+          docker run -d --name sqlserver_pages -p 1433:1433 \
+            -e "ACCEPT_EULA=Y" \
+            -e "SA_PASSWORD=YourStrong@Passw0rd" \
+            mcr.microsoft.com/mssql/server:2019-latest
 
-      - name: Build Lineage & Docs
+          echo "Waiting for SQL Server to be ready..."
+          ready=false
+          for i in {1..60}; do
+            if docker exec sqlserver_pages bash -c "/opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa -P 'YourStrong@Passw0rd' -Q 'SELECT 1' 2>/dev/null || /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P 'YourStrong@Passw0rd' -Q 'SELECT 1' 2>/dev/null"; then
+              ready=true
+              break
+            fi
+            sleep 2
+          done
+          if [ "$ready" != true ]; then
+            docker logs sqlserver_pages
+            echo "SQL Server did not become ready in time." >&2
+            exit 1
+          fi
+
+          curl -fsSL -o /tmp/AdventureWorks2014.bak https://github.com/Microsoft/sql-server-samples/releases/download/adventureworks/AdventureWorks2014.bak
+          docker cp /tmp/AdventureWorks2014.bak sqlserver_pages:/tmp/AdventureWorks2014.bak
+          if docker exec sqlserver_pages test -x /opt/mssql-tools18/bin/sqlcmd; then
+            SQLCMD="docker exec sqlserver_pages /opt/mssql-tools18/bin/sqlcmd -C"
+          else
+            SQLCMD="docker exec sqlserver_pages /opt/mssql-tools/bin/sqlcmd"
+          fi
+          $SQLCMD -S localhost -U sa -P 'YourStrong@Passw0rd' -Q "RESTORE DATABASE AdventureWorks2014 FROM DISK = '/tmp/AdventureWorks2014.bak' WITH MOVE 'AdventureWorks2014_Data' TO '/var/opt/mssql/data/AdventureWorks2014.mdf', MOVE 'AdventureWorks2014_Log' TO '/var/opt/mssql/data/AdventureWorks2014_log.ldf'"
+          $SQLCMD -S localhost -U sa -P 'YourStrong@Passw0rd' -Q "RESTORE DATABASE AdventureWorks2014_Prod FROM DISK = '/tmp/AdventureWorks2014.bak' WITH MOVE 'AdventureWorks2014_Data' TO '/var/opt/mssql/data/AdventureWorks2014_Prod.mdf', MOVE 'AdventureWorks2014_Log' TO '/var/opt/mssql/data/AdventureWorks2014_Prod_log.ldf'"
+
+      - name: Grant DBT production credentials
+        env:
+          PROD_SQL_USER: ${{ secrets.PROD_SQL_USER }}
+          PROD_SQL_PASSWORD: ${{ secrets.PROD_SQL_PASSWORD }}
+        run: |
+          if [ -z "$PROD_SQL_USER" ] || [ -z "$PROD_SQL_PASSWORD" ]; then
+            echo "PROD_SQL_USER and PROD_SQL_PASSWORD secrets must be configured." >&2
+            exit 1
+          fi
+          if [ "$PROD_SQL_USER" != "sa" ]; then
+            if docker exec sqlserver_pages test -x /opt/mssql-tools18/bin/sqlcmd; then
+              SQLCMD="docker exec sqlserver_pages /opt/mssql-tools18/bin/sqlcmd -C"
+            else
+              SQLCMD="docker exec sqlserver_pages /opt/mssql-tools/bin/sqlcmd"
+            fi
+            $SQLCMD -S localhost -U sa -P 'YourStrong@Passw0rd' -Q "IF NOT EXISTS (SELECT 1 FROM sys.server_principals WHERE name = '$PROD_SQL_USER') CREATE LOGIN [$PROD_SQL_USER] WITH PASSWORD = '$PROD_SQL_PASSWORD'; USE AdventureWorks2014; IF NOT EXISTS (SELECT 1 FROM sys.database_principals WHERE name = '$PROD_SQL_USER') CREATE USER [$PROD_SQL_USER] FOR LOGIN [$PROD_SQL_USER]; ALTER ROLE db_owner ADD MEMBER [$PROD_SQL_USER]; USE AdventureWorks2014_Prod; IF NOT EXISTS (SELECT 1 FROM sys.database_principals WHERE name = '$PROD_SQL_USER') CREATE USER [$PROD_SQL_USER] FOR LOGIN [$PROD_SQL_USER]; ALTER ROLE db_owner ADD MEMBER [$PROD_SQL_USER];"
+          fi
+
+      - name: Install DBT and ODBC dependencies
+        run: |
+          curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | sudo tee /etc/apt/trusted.gpg.d/microsoft.asc >/dev/null
+          curl -fsSL https://packages.microsoft.com/config/ubuntu/22.04/prod.list | sudo tee /etc/apt/sources.list.d/mssql-release.list >/dev/null
+          sudo apt-get update
+          sudo ACCEPT_EULA=Y apt-get install -y msodbcsql17 unixodbc-dev
+          python -m pip install --upgrade pip
+          pip install dbt-sqlserver==1.8.7 pyodbc sqlglot
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Build DBT models, docs, and lineage
+        env:
+          PROD_SQL_SERVER: ${{ secrets.PROD_SQL_SERVER }}
+          PROD_SQL_USER: ${{ secrets.PROD_SQL_USER }}
+          PROD_SQL_PASSWORD: ${{ secrets.PROD_SQL_PASSWORD }}
         run: |
           mkdir -p pages/dbt-docs pages/lineage
-          # 1. Chạy dbt compile/docs generate
           cd dbt
-          dbt deps || true
-          dbt docs generate --profiles-dir . || true
+          dbt deps
+          dbt run --target prod --profiles-dir .
+          dbt docs generate --target prod --profiles-dir .
           cd ..
 
-          # 2. Copy dbt docs nếu có vào pages/dbt-docs/
-          if [ -f dbt/target/index.html ]; then
-            cp dbt/target/index.html pages/dbt-docs/index.html
-          fi
+          # 2. Publish only the files required by the interactive DBT docs UI.
+          test -s dbt/target/index.html
+          test -s dbt/target/manifest.json
+          test -s dbt/target/catalog.json
+          cp dbt/target/index.html dbt/target/manifest.json dbt/target/catalog.json pages/dbt-docs/
 
           # 3. Chạy script tạo interactive Column Lineage
           python scripts/generate_lineage.py
