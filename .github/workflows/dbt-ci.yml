@@ -69,8 +69,7 @@ jobs:
           python-version: '3.9'
 
       - name: Install DBT
-        run: |
-          pip install dbt-sqlserver
+        run: pip install dbt-sqlserver
 
       - name: Install DBT dependencies
         run: |
@@ -106,7 +105,7 @@ jobs:
           python-version: '3.9'
 
       - name: Install DBT
-        run: pip install dbt-sqlserver
+        run: pip install dbt-sqlserver pyodbc
 
       - name: Install dependencies
         run: |

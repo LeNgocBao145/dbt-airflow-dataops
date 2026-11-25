@@ -4,7 +4,6 @@ dbt_airflow_project:
     dev:
       type: sqlserver
       driver: 'ODBC Driver 17 for SQL Server'
-      backend: mssql-python
       server: host.docker.internal
       port: 1433
       database: AdventureWorks2014
@@ -24,7 +23,7 @@ dbt_airflow_project:
 
     ci:
       type: sqlserver
-      backend: mssql-python
+      driver: 'ODBC Driver 17 for SQL Server'
       server: localhost
       port: 1433
       database: AdventureWorks2014_CI

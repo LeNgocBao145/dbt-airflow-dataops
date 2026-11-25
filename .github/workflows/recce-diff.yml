@@ -51,7 +51,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get install -y libltdl7 libkrb5-3 libgssapi-krb5-2
-          pip install "dbt-sqlserver[mssql]" recce
+          pip install "dbt-sqlserver[mssql]" recce pyodbc
 
       - name: Compile Current PR Models
         run: |
