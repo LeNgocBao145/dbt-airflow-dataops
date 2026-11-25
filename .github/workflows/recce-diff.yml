@@ -7,7 +7,6 @@ on:
       - 'dbt/**'
 
 env:
-  DBT_PROFILES_DIR: ./dbt
   DBT_CI_PASSWORD: 'YourStrong@Passw0rd'
 
 jobs:
@@ -56,8 +55,8 @@ jobs:
       - name: Compile Current PR Models
         run: |
           cd dbt
-          dbt deps
-          dbt compile --target ci
+          dbt deps --profiles-dir .
+          dbt compile --target ci --profiles-dir .
           mkdir -p ../target-current
           cp target/manifest.json ../target-current/manifest.json
 
@@ -68,8 +67,8 @@ jobs:
       - name: Compile Base Branch Models
         run: |
           cd dbt
-          dbt deps
-          dbt compile --target ci
+          dbt deps --profiles-dir .
+          dbt compile --target ci --profiles-dir .
           mkdir -p ../target-base
           cp target/manifest.json ../target-base/manifest.json
 
