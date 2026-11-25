@@ -6,6 +6,10 @@ on:
     paths:
       - 'dbt/**'
 
+env:
+  DBT_PROFILES_DIR: ./dbt
+  DBT_CI_PASSWORD: 'YourStrong@Passw0rd'
+
 jobs:
   recce-diff:
     name: Run Recce Impact Analysis
@@ -26,6 +30,25 @@ jobs:
           python-version: '3.9'
           cache: 'pip'
 
+      - name: Start SQL Server for CI
+        run: |
+          docker run -d --name sqlserver_ci -p 1433:1433 \
+            -e "ACCEPT_EULA=Y" \
+            -e "SA_PASSWORD=YourStrong@Passw0rd" \
+            mcr.microsoft.com/mssql/server:2019-latest
+
+          echo "Waiting for SQL Server to be ready..."
+          for i in {1..30}; do
+            if docker exec sqlserver_ci bash -c "/opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa -P 'YourStrong@Passw0rd' -Q 'SELECT 1' 2>/dev/null || /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P 'YourStrong@Passw0rd' -Q 'SELECT 1' 2>/dev/null"; then
+              echo "SQL Server is ready!"
+              break
+            fi
+            echo "Waiting..."
+            sleep 2
+          done
+
+          docker exec sqlserver_ci bash -c "/opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa -P 'YourStrong@Passw0rd' -Q 'CREATE DATABASE AdventureWorks2014_CI;' 2>/dev/null || /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P 'YourStrong@Passw0rd' -Q 'CREATE DATABASE AdventureWorks2014_CI;'"
+
       - name: Install dependencies
         run: |
           pip install dbt-sqlserver recce
@@ -34,7 +57,7 @@ jobs:
         run: |
           cd dbt
           dbt deps
-          dbt compile --target dev
+          dbt compile --target ci
           mkdir -p ../target-current
           cp target/manifest.json ../target-current/manifest.json
 
@@ -46,7 +69,7 @@ jobs:
         run: |
           cd dbt
           dbt deps
-          dbt compile --target dev
+          dbt compile --target ci
           mkdir -p ../target-base
           cp target/manifest.json ../target-base/manifest.json
 
@@ -59,7 +82,7 @@ jobs:
         run: |
           cd dbt
           # Run Recce diff against base manifest
-          recce run --manifest-base ../target-base/manifest.json --target-base ../target-base
+          recce run --target ci --manifest-base ../target-base/manifest.json --target-base ../target-base
           recce summary --format markdown > ../recce_summary.md
 
       - name: Comment Recce Summary on PR
