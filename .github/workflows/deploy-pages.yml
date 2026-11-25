@@ -84,7 +84,7 @@ jobs:
           sudo apt-get update
           sudo ACCEPT_EULA=Y apt-get install -y msodbcsql17 unixodbc-dev
           python -m pip install --upgrade pip
-          pip install dbt-sqlserver==1.8.7 pyodbc sqlglot
+          pip install dbt-sqlserver==1.8.7 pyodbc dbt-colibri==0.3.7
 
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
@@ -99,6 +99,7 @@ jobs:
           cd dbt
           dbt deps
           dbt run --target prod --profiles-dir .
+          dbt compile --target prod --profiles-dir .
           dbt docs generate --target prod --profiles-dir .
           cd ..
 
@@ -108,8 +109,17 @@ jobs:
           test -s dbt/target/catalog.json
           cp dbt/target/index.html dbt/target/manifest.json dbt/target/catalog.json pages/dbt-docs/
 
-          # 3. Chạy script tạo interactive Column Lineage
-          python scripts/generate_lineage.py
+          # 3. Generate the static column-lineage dashboard with dbt-colibri.
+          colibri generate \
+            --manifest dbt/target/manifest.json \
+            --catalog dbt/target/catalog.json \
+            --output-dir pages/lineage \
+            --disable-telemetry
+          test -s pages/lineage/index.html
+          test -s pages/lineage/colibri-manifest.json
+          python scripts/prepare_colibri_artifact.py \
+            --html pages/lineage/index.html \
+            --manifest pages/lineage/colibri-manifest.json
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
