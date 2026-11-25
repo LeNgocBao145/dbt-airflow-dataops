@@ -29,7 +29,7 @@ jobs:
           python-version: '3.10'
           cache: 'pip'
 
-      - name: Start SQL Server for CI
+      - name: Start and seed SQL Server for CI
         run: |
           docker run -d --name sqlserver_ci -p 1433:1433 \
             -e "ACCEPT_EULA=Y" \
@@ -39,52 +39,61 @@ jobs:
           echo "Waiting for SQL Server to be ready..."
           for i in {1..30}; do
             if docker exec sqlserver_ci bash -c "/opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa -P 'YourStrong@Passw0rd' -Q 'SELECT 1' 2>/dev/null || /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P 'YourStrong@Passw0rd' -Q 'SELECT 1' 2>/dev/null"; then
-              echo "SQL Server is ready!"
               break
             fi
-            echo "Waiting..."
             sleep 2
           done
 
-          docker exec sqlserver_ci bash -c "/opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa -P 'YourStrong@Passw0rd' -Q 'CREATE DATABASE AdventureWorks2014_CI;' 2>/dev/null || /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P 'YourStrong@Passw0rd' -Q 'CREATE DATABASE AdventureWorks2014_CI;'"
+          curl -fsSL -o /tmp/AdventureWorks2014.bak https://github.com/Microsoft/sql-server-samples/releases/download/adventureworks/AdventureWorks2014.bak
+          docker cp /tmp/AdventureWorks2014.bak sqlserver_ci:/tmp/AdventureWorks2014.bak
+          sqlcmd() {
+            if docker exec sqlserver_ci test -x /opt/mssql-tools18/bin/sqlcmd; then
+              docker exec sqlserver_ci /opt/mssql-tools18/bin/sqlcmd -C "$@"
+            else
+              docker exec sqlserver_ci /opt/mssql-tools/bin/sqlcmd "$@"
+            fi
+          }
+          sqlcmd -S localhost -U sa -P 'YourStrong@Passw0rd' -Q "RESTORE DATABASE AdventureWorks2014 FROM DISK = '/tmp/AdventureWorks2014.bak' WITH MOVE 'AdventureWorks2014_Data' TO '/var/opt/mssql/data/AdventureWorks2014.mdf', MOVE 'AdventureWorks2014_Log' TO '/var/opt/mssql/data/AdventureWorks2014_log.ldf'"
+          sqlcmd -S localhost -U sa -P 'YourStrong@Passw0rd' -Q "RESTORE DATABASE AdventureWorks2014_CI FROM DISK = '/tmp/AdventureWorks2014.bak' WITH MOVE 'AdventureWorks2014_Data' TO '/var/opt/mssql/data/AdventureWorks2014_CI.mdf', MOVE 'AdventureWorks2014_Log' TO '/var/opt/mssql/data/AdventureWorks2014_CI_log.ldf'"
+          sqlcmd -S localhost -U sa -P 'YourStrong@Passw0rd' -Q "RESTORE DATABASE AdventureWorks2014_PR FROM DISK = '/tmp/AdventureWorks2014.bak' WITH MOVE 'AdventureWorks2014_Data' TO '/var/opt/mssql/data/AdventureWorks2014_PR.mdf', MOVE 'AdventureWorks2014_Log' TO '/var/opt/mssql/data/AdventureWorks2014_PR_log.ldf'"
 
       - name: Install dependencies
         run: |
           sudo apt-get install -y libltdl7 libkrb5-3 libgssapi-krb5-2
           pip install "dbt-sqlserver[mssql]" recce pyodbc
 
-      - name: Compile Current PR Models
-        run: |
-          cd dbt
-          dbt deps --profiles-dir .
-          dbt compile --target ci --profiles-dir .
-          mkdir -p ../target-current
-          cp target/manifest.json ../target-current/manifest.json
-
       - name: Checkout Base Branch (Target)
         run: |
           git checkout ${{ github.base_ref }}
 
-      - name: Compile Base Branch Models
+      - name: Build Base Models and Artifacts
         run: |
           cd dbt
           dbt deps --profiles-dir .
-          dbt compile --target ci --profiles-dir .
-          mkdir -p ../target-base
-          cp target/manifest.json ../target-base/manifest.json
+          dbt run --target ci --profiles-dir .
+          dbt docs generate --target ci --target-path ../target-base --profiles-dir .
+          test -s ../target-base/manifest.json && test -s ../target-base/catalog.json
 
       - name: Return to PR Branch
         run: |
           git checkout ${{ github.head_ref || github.ref_name }}
 
+      - name: Build Current PR Models and Artifacts
+        run: |
+          cd dbt
+          dbt deps --profiles-dir .
+          dbt run --target pr --profiles-dir .
+          dbt docs generate --target pr --profiles-dir .
+          test -s target/manifest.json && test -s target/catalog.json
+
       - name: Run Recce Lineage & Schema Diff
         id: recce_summary
         run: |
           cd dbt
-          # Restore PR artifacts as current; dbt/target was overwritten by base compile.
-          cp ../target-current/manifest.json target/manifest.json
-          # Run Recce diff against base manifest
-          recce run --target ci --target-base-path ../target-base --profiles-dir .
+          # The PR build artifacts are in target/; base artifacts are in ../target-base.
+          test -s target/manifest.json && test -s target/catalog.json
+          # Execute configured data checks and save results before generating the PR summary.
+          recce run --target pr --target-path target --target-base-path ../target-base --profiles-dir . --state-file recce_state.json
           recce summary recce_state.json > ../recce_summary.md
 
       - name: Comment Recce Summary on PR

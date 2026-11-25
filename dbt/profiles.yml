@@ -34,6 +34,19 @@ dbt_airflow_project:
       trust_cert: true
       encrypt: false
 
+    pr:
+      type: sqlserver
+      driver: 'ODBC Driver 17 for SQL Server'
+      server: localhost
+      port: 1433
+      database: AdventureWorks2014_PR
+      schema: dbo
+      user: sa
+      password: "{{ env_var('DBT_CI_PASSWORD', 'YourStrong@Passw0rd') }}"
+      threads: 2
+      trust_cert: true
+      encrypt: false
+
     test:
       type: sqlserver
       driver: 'ODBC Driver 17 for SQL Server'

@@ -1,0 +1,55 @@
+checks:
+  - name: Row count diff for changed tables
+    description: Compare row counts for changed table models in the PR.
+    type: row_count_diff
+    params:
+      select: state:modified+,config.materialized:table
+      view_mode: changed_models
+
+  - name: Profile diff for customer metrics
+    description: Compare statistical profiles for the customer metrics table.
+    type: profile_diff
+    params:
+      model: gld_customer_metrics
+
+  - name: Profile diff for product performance
+    description: Compare statistical profiles for the product performance table.
+    type: profile_diff
+    params:
+      model: gld_product_performance
+
+  - name: Profile diff for sales summary
+    description: Compare statistical profiles for the sales summary table.
+    type: profile_diff
+    params:
+      model: gld_sales_summary
+
+  - name: Profile diff for customer analytics
+    description: Compare statistical profiles for the customer analytics table.
+    type: profile_diff
+    params:
+      model: gld_customer_analytics
+
+  - name: Profile diff for product analytics
+    description: Compare statistical profiles for the product analytics table.
+    type: profile_diff
+    params:
+      model: gld_product_analytics
+
+  - name: Profile diff for customers
+    description: Compare statistical profiles for the customers table.
+    type: profile_diff
+    params:
+      model: slvr_customers
+
+  - name: Profile diff for products
+    description: Compare statistical profiles for the products table.
+    type: profile_diff
+    params:
+      model: slvr_products
+
+  - name: Profile diff for sales orders
+    description: Compare statistical profiles for the sales orders table.
+    type: profile_diff
+    params:
+      model: slvr_sales_orders
