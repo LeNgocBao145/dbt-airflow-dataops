@@ -48,3 +48,5 @@ backup/
 great_expectations/uncommitted/
 .env.*
 !.env.example
+
+.secrets
