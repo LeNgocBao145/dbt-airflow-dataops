@@ -5,6 +5,8 @@ on:
     branches: [main, develop]
     paths:
       - 'dbt/**'
+      - 'scripts/patch_recce_sqlserver_profile.py'
+      - '.github/workflows/recce-diff.yml'
 
 env:
   DBT_CI_PASSWORD: 'YourStrong@Passw0rd'
@@ -61,6 +63,7 @@ jobs:
         run: |
           sudo apt-get install -y libltdl7 libkrb5-3 libgssapi-krb5-2
           pip install "dbt-sqlserver[mssql]" recce pyodbc
+          python scripts/patch_recce_sqlserver_profile.py
 
       - name: Checkout Base Branch (Target)
         run: |
@@ -82,8 +85,9 @@ jobs:
         run: |
           cd dbt
           dbt deps --profiles-dir .
-          dbt run --target pr --profiles-dir .
-          dbt docs generate --target pr --profiles-dir .
+          DEMO_VARS='{recce_demo_mismatch: true}'
+          dbt run --target pr --vars "$DEMO_VARS" --profiles-dir .
+          dbt docs generate --target pr --vars "$DEMO_VARS" --profiles-dir .
           test -s target/manifest.json && test -s target/catalog.json
 
       - name: Run Recce Lineage & Schema Diff
@@ -95,6 +99,7 @@ jobs:
           # Execute configured data checks and save results before generating the PR summary.
           recce run --target pr --target-path target --target-base-path ../target-base --profiles-dir . --state-file recce_state.json
           recce summary recce_state.json > ../recce_summary.md
+          printf '\n## Data Mismatch Detected (Demo)\n\nCurrent `gld_sales_summary` intentionally excludes its latest order date; Base retains it.\n' >> ../recce_summary.md
 
       - name: Comment Recce Summary on PR
         uses: actions/github-script@v6
