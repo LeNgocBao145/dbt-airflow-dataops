@@ -1,0 +1,84 @@
+name: Recce PR Data Impact Analysis
+
+on:
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - 'dbt/**'
+
+jobs:
+  recce-diff:
+    name: Run Recce Impact Analysis
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+      - name: Checkout PR Branch (Current)
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          pip install dbt-core==1.7.3 dbt-sqlserver==1.8.7 recce
+
+      - name: Compile Current PR Models
+        run: |
+          cd dbt
+          dbt deps
+          dbt compile --target dev
+          mkdir -p ../target-current
+          cp target/manifest.json ../target-current/manifest.json
+
+      - name: Checkout Base Branch (Target)
+        run: |
+          git checkout ${{ github.base_ref }}
+
+      - name: Compile Base Branch Models
+        run: |
+          cd dbt
+          dbt deps
+          dbt compile --target dev
+          mkdir -p ../target-base
+          cp target/manifest.json ../target-base/manifest.json
+
+      - name: Return to PR Branch
+        run: |
+          git checkout ${{ github.head_ref || github.ref_name }}
+
+      - name: Run Recce Lineage & Schema Diff
+        id: recce_summary
+        run: |
+          cd dbt
+          # Run Recce diff against base manifest
+          recce run --manifest-base ../target-base/manifest.json --target-base ../target-base
+          recce summary --format markdown > ../recce_summary.md
+
+      - name: Comment Recce Summary on PR
+        uses: actions/github-script@v6
+        if: always()
+        with:
+          script: |
+            const fs = require('fs');
+            const summaryPath = 'recce_summary.md';
+            if (fs.existsSync(summaryPath)) {
+              const body = fs.readFileSync(summaryPath, 'utf8');
+              if (body.trim().length > 0) {
+                github.rest.issues.createComment({
+                  issue_number: context.issue.number,
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  body: `### 🔍 Recce Data Impact & Lineage Diff Report\n\n${body}`
+                });
+              }
+            } else {
+              console.log('No recce summary found.');
+            }

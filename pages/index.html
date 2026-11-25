@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DataOps Pipeline Documentation & Lineage</title>
+    <style>
+        :root {
+            --primary: #2563eb;
+            --primary-dark: #1d4ed8;
+            --bg: #0f172a;
+            --card-bg: #1e293b;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --border: #334155;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background: var(--bg);
+            color: var(--text-main);
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+        }
+        .container {
+            max-width: 900px;
+            width: 90%;
+            text-align: center;
+            padding: 40px 20px;
+        }
+        .badge {
+            display: inline-block;
+            background: rgba(37, 99, 235, 0.2);
+            color: #60a5fa;
+            border: 1px solid rgba(96, 165, 250, 0.3);
+            padding: 6px 14px;
+            border-radius: 9999px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            margin-bottom: 20px;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+        h1 {
+            font-size: 2.5rem;
+            margin: 0 0 16px 0;
+            font-weight: 800;
+            letter-spacing: -0.02em;
+        }
+        p.subtitle {
+            font-size: 1.15rem;
+            color: var(--text-muted);
+            margin-bottom: 40px;
+            line-height: 1.6;
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 24px;
+            margin-bottom: 40px;
+            text-align: left;
+        }
+        .card {
+            background: var(--card-bg);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            padding: 28px;
+            text-decoration: none;
+            color: inherit;
+            transition: all 0.25s ease;
+            position: relative;
+            display: flex;
+            flex-direction: column;
+        }
+        .card:hover {
+            transform: translateY(-5px);
+            border-color: var(--primary);
+            box-shadow: 0 12px 24px -10px rgba(37, 99, 235, 0.3);
+        }
+        .card-icon {
+            font-size: 2rem;
+            margin-bottom: 16px;
+        }
+        .card h2 {
+            font-size: 1.35rem;
+            margin: 0 0 10px 0;
+            color: #ffffff;
+        }
+        .card p {
+            color: var(--text-muted);
+            font-size: 0.95rem;
+            line-height: 1.5;
+            margin: 0 0 20px 0;
+            flex-grow: 1;
+        }
+        .card-link {
+            color: #60a5fa;
+            font-weight: 600;
+            font-size: 0.9rem;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        footer {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            border-top: 1px solid var(--border);
+            padding-top: 24px;
+            width: 100%;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <span class="badge">🚀 Enterprise DataOps Portal</span>
+        <h1>Data Pipeline Lineage & Docs</h1>
+        <p class="subtitle">Khám phá toàn bộ kiến trúc luồng dữ liệu (Bronze ➔ Silver ➔ Gold), tài liệu hóa schema và truy vết column-level lineage tự động.</p>
+
+        <div class="grid">
+            <a href="./lineage/" class="card">
+                <div class="card-icon">🔍</div>
+                <h2>Interactive Column Lineage</h2>
+                <p>Biểu đồ truy vết dòng chảy dữ liệu cấp độ thuộc tính (Column-Level Lineage). Cho phép zoom, kéo thả và highlight nguồn gốc các metrics.</p>
+                <div class="card-link">Mở Column Lineage <span>&rarr;</span></div>
+            </a>
+
+            <a href="./dbt-docs/" class="card">
+                <div class="card-icon">📑</div>
+                <h2>DBT Documentation</h2>
+                <p>Toàn bộ tài liệu kỹ thuật, Data Catalog của AdventureWorks, schema tests và Table-level DAG sinh ra tự động bởi DBT.</p>
+                <div class="card-link">Mở DBT Docs <span>&rarr;</span></div>
+            </a>
+        </div>
+
+        <footer>
+            DataOps Final Year Student Project &bull; HCMUS &bull; Automated Deployment via GitHub Actions
+        </footer>
+    </div>
+</body>
+</html>

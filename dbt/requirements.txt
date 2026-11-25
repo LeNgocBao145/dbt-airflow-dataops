@@ -5,4 +5,3 @@ python-dotenv==1.0.0
 dbt-utils==1.1.1
 great-expectations==0.18.8
 sqlalchemy==1.4.48
-pyodbc==4.0.39
